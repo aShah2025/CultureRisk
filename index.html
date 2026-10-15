@@ -1,0 +1,525 @@
+<!doctype html>
+<!--
+  =============================================================================
+  CultureRisk AI — Executive Studio Decision Cockpit
+  -----------------------------------------------------------------------------
+  Single-file front end. No build step, no external JS dependencies.
+  Talks only to the same-origin route  GET /api/qloo_bridge  which Netlify
+  rewrites to the serverless function in netlify/functions/qloo_bridge.js.
+  =============================================================================
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CultureRisk AI — Studio Decision Cockpit</title>
+  <meta name="description" content="De-risk film greenlight decisions with Qloo cross-domain cultural affinity intelligence." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ----------------------------------------------------------------------
+       Design tokens
+       ---------------------------------------------------------------------- */
+    :root {
+      --bg: #090d16;
+      --bg-elev: #0f1522;
+      --bg-elev-2: #141c2c;
+      --border: #1f2a3d;
+      --border-strong: #2c3a54;
+      --text: #e6edf3;
+      --text-dim: #8b98ad;
+      --text-faint: #5a6780;
+      --accent: #ff7b72;
+      --accent-soft: rgba(255, 123, 114, 0.12);
+      --accent-glow: rgba(255, 123, 114, 0.35);
+      --ok: #3fb950;
+      --warn: #d29922;
+      --bad: #f85149;
+      --radius: 12px;
+      --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background:
+        radial-gradient(1200px 600px at 85% -10%, rgba(255, 123, 114, 0.08), transparent 60%),
+        radial-gradient(900px 500px at -10% 110%, rgba(88, 166, 255, 0.05), transparent 60%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .shell { max-width: 1240px; margin: 0 auto; padding: 28px 24px 64px; }
+
+    /* ----------------------------------------------------------------------
+       Header
+       ---------------------------------------------------------------------- */
+    header.top {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding-bottom: 22px; border-bottom: 1px solid var(--border); margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand-mark {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), #c9416a);
+      display: grid; place-items: center;
+      font-family: var(--mono); font-weight: 600; color: #0b0f19; font-size: 15px;
+      box-shadow: 0 0 24px var(--accent-glow);
+    }
+    .brand h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+    .brand p { margin: 2px 0 0; color: var(--text-dim); font-size: 13px; }
+    .status-pill {
+      font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+      border: 1px solid var(--border-strong); border-radius: 999px; padding: 6px 12px;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
+    .dot.live { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+    .dot.mock { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+
+    /* ----------------------------------------------------------------------
+       Layout
+       ---------------------------------------------------------------------- */
+    .grid-main { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 24px; }
+    @media (max-width: 960px) { .grid-main { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: linear-gradient(180deg, var(--bg-elev), var(--bg));
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 22px;
+    }
+    .panel-title {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--accent); margin: 0 0 16px; display: flex; align-items: center; gap: 8px;
+    }
+    .panel-title::before { content: ''; width: 6px; height: 6px; background: var(--accent); border-radius: 1px; }
+
+    /* ----------------------------------------------------------------------
+       Presets
+       ---------------------------------------------------------------------- */
+    .presets { display: grid; gap: 10px; margin-bottom: 22px; }
+    .preset {
+      text-align: left; cursor: pointer; width: 100%;
+      background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 14px; color: var(--text); font-family: inherit;
+      transition: border-color .15s, background .15s, transform .15s;
+    }
+    .preset:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .preset .p-name { font-weight: 600; font-size: 14px; }
+    .preset .p-meta { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); margin-top: 3px; }
+
+    /* ----------------------------------------------------------------------
+       Form
+       ---------------------------------------------------------------------- */
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--text-dim); margin: 0 0 6px; letter-spacing: 0.02em; }
+    .field { margin-bottom: 16px; }
+    textarea, input[type="text"], select {
+      width: 100%; background: #070a12; color: var(--text);
+      border: 1px solid var(--border-strong); border-radius: 8px;
+      padding: 11px 12px; font-family: var(--mono); font-size: 13px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    textarea { min-height: 150px; resize: vertical; line-height: 1.55; }
+    textarea:focus, input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    select { appearance: none; cursor: pointer;
+      background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%), linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+      background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+      background-size: 5px 5px; background-repeat: no-repeat; padding-right: 36px; }
+    .hint { font-size: 11.5px; color: var(--text-faint); margin-top: 5px; }
+
+    .btn-exec {
+      width: 100%; padding: 14px 18px; border: none; border-radius: 10px; cursor: pointer;
+      background: linear-gradient(135deg, var(--accent), #e0566b); color: #0b0f19;
+      font-family: var(--mono); font-weight: 600; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase;
+      box-shadow: 0 8px 28px -8px var(--accent-glow);
+      transition: transform .12s, box-shadow .15s, opacity .15s;
+    }
+    .btn-exec:hover { transform: translateY(-1px); box-shadow: 0 12px 32px -8px var(--accent-glow); }
+    .btn-exec:disabled { opacity: .55; cursor: progress; transform: none; }
+    .btn-exec:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+
+    /* ----------------------------------------------------------------------
+       Results
+       ---------------------------------------------------------------------- */
+    .empty {
+      border: 1px dashed var(--border-strong); border-radius: var(--radius);
+      padding: 56px 24px; text-align: center; color: var(--text-dim);
+    }
+    .empty code { font-family: var(--mono); color: var(--accent); }
+
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+    @media (max-width: 720px) { .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .kpi { background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+    .kpi .k-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
+    .kpi .k-value { font-size: 26px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+    .kpi .k-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+    .verdict-GREENLIGHT { color: var(--ok); }
+    .verdict-CONDITIONAL { color: var(--warn); }
+    .verdict-HIGH { color: var(--bad); }
+
+    .result-meta {
+      display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+      font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin-bottom: 14px;
+    }
+    .badge { padding: 3px 9px; border-radius: 6px; font-weight: 600; font-size: 11px; letter-spacing: 0.08em; }
+    .badge.live { background: rgba(63, 185, 80, .14); color: var(--ok); border: 1px solid rgba(63, 185, 80, .35); }
+    .badge.mock { background: rgba(210, 153, 34, .14); color: var(--warn); border: 1px solid rgba(210, 153, 34, .35); }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+    .card {
+      background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+      animation: rise .35s ease both;
+    }
+    .card:hover { border-color: var(--border-strong); }
+    @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .card-rank { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+    .card-name { font-weight: 600; font-size: 15.5px; overflow-wrap: anywhere; }
+    .metric { display: grid; grid-template-columns: 82px 1fr 44px; align-items: center; gap: 8px; font-size: 12px; }
+    .metric .m-label { color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
+    .metric .m-val { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+    .bar { height: 6px; background: #1a2232; border-radius: 3px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #c9416a, var(--accent)); }
+    .bar.pop > span { background: linear-gradient(90deg, #1f6feb, #58a6ff); }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--text-dim); }
+    .rationale { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; border-top: 1px solid var(--border); padding-top: 10px; }
+
+    .error {
+      border: 1px solid rgba(248, 81, 73, .4); background: rgba(248, 81, 73, .08);
+      color: #ffb4ae; border-radius: var(--radius); padding: 16px; font-size: 13.5px;
+    }
+    .error code { font-family: var(--mono); color: var(--accent); }
+
+    .skeleton { height: 190px; border-radius: var(--radius); border: 1px solid var(--border);
+      background: linear-gradient(90deg, var(--bg-elev) 0%, var(--bg-elev-2) 50%, var(--bg-elev) 100%);
+      background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+    @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+    footer { margin-top: 40px; color: var(--text-faint); font-size: 12px; font-family: var(--mono); text-align: center; }
+
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+    @media (max-width: 480px) { .shell { padding: 20px 16px 48px; } }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <!-- =================================================================== -->
+    <!-- Header                                                              -->
+    <!-- =================================================================== -->
+    <header class="top">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">CR</div>
+        <div>
+          <h1>CultureRisk AI</h1>
+          <p>Executive Studio Decision Cockpit · Powered by Qloo Taste AI</p>
+        </div>
+      </div>
+      <div class="status-pill" id="statusPill" role="status" aria-live="polite">
+        <span class="dot" id="statusDot"></span><span id="statusText">STANDBY</span>
+      </div>
+    </header>
+
+    <div class="grid-main">
+      <!-- ================================================================= -->
+      <!-- Left column: executive input block                                -->
+      <!-- ================================================================= -->
+      <section class="panel" aria-labelledby="inputTitle">
+        <h2 class="panel-title" id="inputTitle">Preset Case Study Evaluation</h2>
+        <div class="presets" id="presets"><!-- populated by JS --></div>
+
+        <h2 class="panel-title">Greenlight Analysis Input</h2>
+        <form id="riskForm" novalidate>
+          <div class="field">
+            <label for="scriptLog">Script Log / Logline &amp; Treatment Notes</label>
+            <textarea id="scriptLog" name="scriptLog" placeholder="Paste logline, synopsis, or development notes…"></textarea>
+            <div class="hint">Stays in your browser. Used for genre-signal context only.</div>
+          </div>
+
+          <div class="field">
+            <label for="scriptAnchor">Box-Office Anchor Title</label>
+            <input type="text" id="scriptAnchor" name="scriptAnchor" maxlength="120" autocomplete="off" placeholder="e.g. Blade Runner 2049" required />
+            <div class="hint">A released comparable film whose audience represents your target.</div>
+          </div>
+
+          <div class="field">
+            <label for="targetDomain">Qloo Cross-Domain Layer</label>
+            <select id="targetDomain" name="targetDomain">
+              <option value="urn:entity:brand">Brand Partnerships — urn:entity:brand</option>
+              <option value="urn:entity:artist">Soundtrack &amp; Talent — urn:entity:artist</option>
+              <option value="urn:entity:destination">Location &amp; Tourism — urn:entity:destination</option>
+            </select>
+          </div>
+
+          <button type="submit" class="btn-exec" id="execBtn">▶ Execute Culture Risk Analysis</button>
+        </form>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- Right column: results                                             -->
+      <!-- ================================================================= -->
+      <section class="panel" aria-labelledby="resultsTitle">
+        <h2 class="panel-title" id="resultsTitle">Cultural Affinity Intelligence</h2>
+        <div id="results" aria-live="polite">
+          <div class="empty">
+            Select a <strong>preset case study</strong> or enter an anchor title, then execute.<br />
+            Results stream from <code>/api/qloo_bridge</code>.
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <footer>CultureRisk AI · MIT Licensed · Built for the Qloo Agentic Hackathon</footer>
+  </div>
+
+  <script>
+    /* ======================================================================
+       CultureRisk AI — Cockpit controller
+       ====================================================================== */
+    (function () {
+      'use strict';
+
+      /** Same-origin public route; netlify.toml rewrites to the function. */
+      const API_ENDPOINT = '/api/qloo_bridge';
+      const REQUEST_TIMEOUT_MS = 12000;
+
+      /** Evaluation presets — realistic development-slate scenarios. */
+      const PRESETS = [
+        {
+          name: 'Cyberpunk Neo-Noir Thriller',
+          anchor: 'Blade Runner 2049',
+          domain: 'urn:entity:artist',
+          script:
+            'LOGLINE: In a rain-drenched 2091 Neo-Osaka, a disgraced memory-forensics detective discovers that ' +
+            'the synthetic witness she is hunting holds the only surviving copy of her late daughter\'s consciousness.\n\n' +
+            'TONE: Slow-burn, atmospheric, synth-driven score. Brutalist megastructures, neon haze, philosophical stakes.\n' +
+            'BUDGET: $145M · RATING TARGET: R · RELEASE WINDOW: Q4 premium-format (IMAX / Dolby).',
+        },
+        {
+          name: 'Royal Period Drama',
+          anchor: "The King's Speech",
+          domain: 'urn:entity:destination',
+          script:
+            'LOGLINE: In 1937, a reluctant princess-regent must hide a crippling stammer from Parliament while ' +
+            'a self-taught Glaswegian elocutionist becomes the most dangerous confidant in the Empire.\n\n' +
+            'TONE: Intimate, witty, prestige awards-season drama. Period-accurate interiors, Scottish and London exteriors.\n' +
+            'BUDGET: $28M · RATING TARGET: PG-13 · RELEASE WINDOW: Limited platform, November.',
+        },
+        {
+          name: 'Elevated Survival Adventure',
+          anchor: 'The Revenant',
+          domain: 'urn:entity:brand',
+          script:
+            'LOGLINE: After a whiteout strands her expedition on an Arctic ice shelf, a celebrated mountaineer ' +
+            'must lead rival scientists 300 miles across collapsing sea ice before the polar night falls.\n\n' +
+            'TONE: Visceral, naturalistic, practical-effects heavy. Premium outdoor gear is narratively central.\n' +
+            'BUDGET: $95M · RATING TARGET: R · RELEASE WINDOW: Late-winter wide release.',
+        },
+      ];
+
+      /* ---------------------------- DOM refs ---------------------------- */
+      const $ = (id) => document.getElementById(id);
+      const form = $('riskForm');
+      const scriptLog = $('scriptLog');
+      const anchorInput = $('scriptAnchor');
+      const domainSelect = $('targetDomain');
+      const execBtn = $('execBtn');
+      const resultsEl = $('results');
+      const statusDot = $('statusDot');
+      const statusText = $('statusText');
+      const presetsEl = $('presets');
+
+      /* ---------------------------- Utilities --------------------------- */
+
+      /** Escape untrusted strings before HTML interpolation. */
+      function esc(value) {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      /** Format a 0–1 metric as a percentage string. */
+      function pct(v) {
+        return typeof v === 'number' ? Math.round(v * 100) + '%' : '—';
+      }
+
+      /** Width (0–100) for a metric bar. */
+      function barWidth(v) {
+        return typeof v === 'number' ? Math.max(0, Math.min(100, v * 100)).toFixed(1) : 0;
+      }
+
+      function setStatus(state, label) {
+        statusDot.className = 'dot' + (state ? ' ' + state : '');
+        statusText.textContent = label;
+      }
+
+      /** Lightweight client-side genre signal extraction from the script log. */
+      function detectGenreSignals(text) {
+        const lexicon = {
+          'Sci-Fi': /\b(cyber|synthetic|android|neon|dystop|future|20[5-9]\d|21\d\d|ai)\b/i,
+          'Noir': /\b(detective|noir|rain|crime|forensic)\b/i,
+          'Period': /\b(1[6-9]\d\d|king|queen|princess|empire|regent|parliament|victorian)\b/i,
+          'Prestige': /\b(awards?|prestige|limited platform|oscar)\b/i,
+          'Survival': /\b(survival|expedition|arctic|wilderness|stranded)\b/i,
+          'Action': /\b(action|chase|heist|war|battle)\b/i,
+          'Romance': /\b(love|romance|affair)\b/i,
+        };
+        return Object.keys(lexicon).filter((k) => lexicon[k].test(text || ''));
+      }
+
+      /* ---------------------------- Presets ----------------------------- */
+
+      function renderPresets() {
+        presetsEl.innerHTML = PRESETS.map((p, i) => {
+          const opt = domainSelect.querySelector('option[value="' + p.domain + '"]');
+          const domainLabel = opt ? opt.textContent.split(' — ')[0] : p.domain;
+          return (
+            '<button type="button" class="preset" data-index="' + i + '">' +
+              '<div class="p-name">' + esc(p.name) + '</div>' +
+              '<div class="p-meta">Anchor: ' + esc(p.anchor) + ' · ' + esc(domainLabel) + '</div>' +
+            '</button>'
+          );
+        }).join('');
+
+        presetsEl.addEventListener('click', (e) => {
+          const btn = e.target.closest('.preset');
+          if (!btn) return;
+          const p = PRESETS[Number(btn.dataset.index)];
+          scriptLog.value = p.script;
+          anchorInput.value = p.anchor;
+          domainSelect.value = p.domain;
+          anchorInput.focus();
+          setStatus('', 'PRESET LOADED');
+        });
+      }
+
+      /* ---------------------------- Rendering --------------------------- */
+
+      function renderLoading() {
+        resultsEl.innerHTML =
+          '<div class="summary">' + '<div class="skeleton" style="height:92px"></div>'.repeat(4) + '</div>' +
+          '<div class="cards">' + '<div class="skeleton"></div>'.repeat(6) + '</div>';
+      }
+
+      function renderError(message) {
+        resultsEl.innerHTML =
+          '<div class="error"><strong>Analysis failed.</strong> ' + esc(message) +
+          '<br /><br />Running locally? Use <code>netlify dev</code> so <code>/api/qloo_bridge</code> is served.</div>';
+      }
+
+      function renderResults(data, genres) {
+        const s = data.summary || {};
+        const verdict = s.verdict || '—';
+        const verdictClass = 'verdict-' + verdict.split(' ')[0];
+        const isLive = data.mode === 'live';
+
+        const kpis = [
+          { label: 'Verdict', value: verdict, cls: verdictClass, sub: 'Greenlight posture' },
+          { label: 'Culture Risk', value: s.cultureRiskScore ?? '—', sub: '0 = minimal · 100 = severe' },
+          { label: 'Alignment Index', value: s.alignmentIndex ?? '—', sub: 'Mean cross-domain affinity' },
+          { label: 'Dispersion', value: s.dispersion ?? '—', sub: 'Affinity std. deviation (σ)' },
+        ];
+
+        const summaryHtml = '<div class="summary">' + kpis.map((k) =>
+          '<div class="kpi"><div class="k-label">' + esc(k.label) + '</div>' +
+          '<div class="k-value ' + esc(k.cls || '') + '">' + esc(k.value) + '</div>' +
+          '<div class="k-sub">' + esc(k.sub) + '</div></div>'
+        ).join('') + '</div>';
+
+        const metaHtml =
+          '<div class="result-meta">' +
+            '<span class="badge ' + (isLive ? 'live' : 'mock') + '">' + (isLive ? 'LIVE · QLOO' : 'SIMULATED · STUDIO FALLBACK') + '</span>' +
+            '<span>Anchor: ' + esc(data.anchor && data.anchor.title) + '</span>' +
+            '<span>Layer: ' + esc(data.domainLabel) + '</span>' +
+            (genres.length ? '<span>Script signals: ' + esc(genres.join(' · ')) + '</span>' : '') +
+            (!isLive && data.reason ? '<span title="Reason live data was not used">reason: ' + esc(data.reason) + '</span>' : '') +
+          '</div>';
+
+        const results = Array.isArray(data.results) ? data.results : [];
+        const cardsHtml = results.length
+          ? '<div class="cards">' + results.map((r, i) =>
+              '<article class="card" style="animation-delay:' + (i * 50) + 'ms">' +
+                '<div class="card-head"><div class="card-name">' + esc(r.name) + '</div>' +
+                '<div class="card-rank">#' + (i + 1) + '</div></div>' +
+                '<div class="metric"><span class="m-label">AFFINITY</span>' +
+                  '<div class="bar"><span style="width:' + barWidth(r.affinity) + '%"></span></div>' +
+                  '<span class="m-val">' + pct(r.affinity) + '</span></div>' +
+                '<div class="metric"><span class="m-label">POPULARITY</span>' +
+                  '<div class="bar pop"><span style="width:' + barWidth(r.popularity) + '%"></span></div>' +
+                  '<span class="m-val">' + pct(r.popularity) + '</span></div>' +
+                (Array.isArray(r.tags) && r.tags.length
+                  ? '<div class="tags">' + r.tags.map((t) => '<span class="tag">' + esc(t) + '</span>').join('') + '</div>'
+                  : '') +
+                (r.rationale ? '<div class="rationale">' + esc(r.rationale) + '</div>' : '') +
+              '</article>'
+            ).join('') + '</div>'
+          : '<div class="empty">No affinity entities returned for this anchor.</div>';
+
+        resultsEl.innerHTML = metaHtml + summaryHtml + cardsHtml;
+      }
+
+      /* ---------------------------- Execution --------------------------- */
+
+      async function execute(event) {
+        event.preventDefault();
+
+        const anchor = anchorInput.value.trim();
+        if (!anchor) {
+          anchorInput.focus();
+          renderError('A box-office anchor title is required.');
+          return;
+        }
+
+        const params = new URLSearchParams({ scriptAnchor: anchor, targetDomain: domainSelect.value });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+        execBtn.disabled = true;
+        execBtn.textContent = '◌ Analyzing cultural signal…';
+        setStatus('', 'QUERYING');
+        renderLoading();
+
+        try {
+          const res = await fetch(API_ENDPOINT + '?' + params.toString(), {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
+          });
+          const body = await res.json().catch(() => null);
+          if (!res.ok || !body) {
+            throw new Error((body && body.message) || ('HTTP ' + res.status));
+          }
+          renderResults(body, detectGenreSignals(scriptLog.value));
+          setStatus(body.mode === 'live' ? 'live' : 'mock', body.mode === 'live' ? 'LIVE · QLOO' : 'SIMULATED');
+        } catch (err) {
+          renderError(err.name === 'AbortError' ? 'The request timed out.' : (err.message || 'Network error.'));
+          setStatus('', 'ERROR');
+        } finally {
+          clearTimeout(timer);
+          execBtn.disabled = false;
+          execBtn.textContent = '▶ Execute Culture Risk Analysis';
+        }
+      }
+
+      /* ---------------------------- Boot -------------------------------- */
+      renderPresets();
+      form.addEventListener('submit', execute);
+    })();
+  </script>
+</body>
+</html>
