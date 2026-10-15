@@ -1,0 +1,183 @@
+<!doctype html>
+<!--
+  CultureRisk AI — Greenlight Intelligence cockpit.
+  Static shell; behaviour lives in /js (ES modules, no build step).
+  Talks only to same-origin /api/* routes (Netlify Functions).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CultureRisk AI · Greenlight Intelligence</title>
+  <meta name="description" content="An AI analyst that interrogates Qloo's taste graph to stress-test comparable titles, price partnerships, and flag cultural risk before a film is greenlit." />
+  <meta name="theme-color" content="#0b0d12" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff7b72'/%3E%3Ctext x='16' y='22' font-family='Georgia' font-size='17' text-anchor='middle' fill='%230b0d12'%3ECR%3C/text%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/app.css" />
+  <script type="module" src="/js/main.js"></script>
+</head>
+
+<body>
+  <a class="skip" href="#workspace">Skip to analysis</a>
+
+  <!-- ===================================================== Top bar -->
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="wordmark" href="/" aria-label="CultureRisk home">
+        <span class="mark" aria-hidden="true">CR</span>
+        <span>CultureRisk<em>AI</em></span>
+      </a>
+      <nav class="modes" aria-label="Mode">
+        <button type="button" class="mode is-active" data-mode="agent" aria-pressed="true">Agent analysis</button>
+        <button type="button" class="mode" data-mode="scan" aria-pressed="false">Quick scan</button>
+      </nav>
+      <div class="status" aria-live="polite">
+        <span class="pill" id="enginePill" title="Which engine plans the research"><span class="dot"></span><span>Engine…</span></span>
+        <span class="pill" id="qlooPill" title="Whether Qloo data is live or simulated"><span class="dot"></span><span>Qloo…</span></span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===================================================== Hero -->
+    <section class="hero wrap">
+      <p class="eyebrow">Greenlight intelligence · powered by Qloo's 250M-entity taste graph</p>
+      <h1>Know the audience <em>before</em> you greenlight.</h1>
+      <p class="lede">
+        CultureRisk is an AI analyst for studio executives. Give it a project and its comparable titles. It interrogates Qloo's
+        cross-domain taste graph, checks whether the comps share an audience, finds under-priced brand, music, and location partners,
+        and delivers a board-ready greenlight memo in which every claim traces back to a Qloo call.
+      </p>
+      <ol class="how">
+        <li><span>1</span>Resolve comps to Qloo entities</li>
+        <li><span>2</span>Map audience taste across domains</li>
+        <li><span>3</span>Stress-test the "X meets Y" pitch</li>
+        <li><span>4</span>Memo with verified evidence</li>
+      </ol>
+    </section>
+
+    <!-- ===================================================== Workspace -->
+    <section id="workspace" class="wrap workspace">
+      <!-- ------------------------------- Brief -->
+      <aside class="brief panel" aria-labelledby="briefTitle">
+        <div class="panel-head">
+          <h2 id="briefTitle">Project brief</h2>
+          <span class="hint">Pick a case study or write your own</span>
+        </div>
+
+        <div class="presets" id="presets" role="list"></div>
+
+        <form id="briefForm" novalidate>
+          <div class="field">
+            <label for="title">Working title</label>
+            <input id="title" name="title" type="text" maxlength="120" autocomplete="off" placeholder="e.g. NEO-OSAKA REQUIEM" />
+          </div>
+          <div class="field">
+            <label for="anchors">Comparable titles <small>1–3, comma separated</small></label>
+            <input id="anchors" name="anchors" type="text" maxlength="300" autocomplete="off" placeholder="Blade Runner 2049, Ghost in the Shell" required />
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="budget">Budget <small>$M</small></label>
+              <input id="budget" name="budget" type="number" min="1" max="999" inputmode="numeric" placeholder="145" />
+            </div>
+          </div>
+          <fieldset class="field">
+            <legend>Taste domains to analyse</legend>
+            <div class="checks" id="domainChecks">
+              <label><input type="checkbox" name="domains" value="urn:entity:brand" checked /> Brand partnerships</label>
+              <label><input type="checkbox" name="domains" value="urn:entity:artist" checked /> Soundtrack &amp; talent</label>
+              <label><input type="checkbox" name="domains" value="urn:entity:destination" checked /> Location &amp; tourism</label>
+              <label><input type="checkbox" name="domains" value="urn:entity:tv_show" /> Streaming adjacency</label>
+              <label><input type="checkbox" name="domains" value="urn:entity:podcast" /> Podcast media buys</label>
+            </div>
+          </fieldset>
+          <div class="field">
+            <label for="script">Logline &amp; treatment notes</label>
+            <textarea id="script" name="script" rows="7" maxlength="6000" placeholder="Logline, tone, release window, rating target…"></textarea>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" id="runBtn">Run greenlight analysis</button>
+            <button type="button" class="btn btn-ghost" id="stopBtn" hidden>Stop</button>
+          </div>
+          <p class="form-error" id="formError" role="alert" hidden></p>
+        </form>
+      </aside>
+
+      <!-- ------------------------------- Report -->
+      <section class="report panel" aria-labelledby="reportTitle">
+        <div class="panel-head">
+          <h2 id="reportTitle">Greenlight report</h2>
+          <div class="report-tools" id="reportTools" hidden>
+            <button type="button" class="btn btn-small" id="copyMd">Copy memo (Markdown)</button>
+            <button type="button" class="btn btn-small" id="downloadJson">Download evidence (JSON)</button>
+          </div>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Report sections">
+          <button role="tab" class="tab is-active" id="tab-trace" aria-controls="view-trace" aria-selected="true">Agent trace</button>
+          <button role="tab" class="tab" id="tab-memo" aria-controls="view-memo" aria-selected="false" disabled>Memo</button>
+          <button role="tab" class="tab" id="tab-blind" aria-controls="view-blind" aria-selected="false" disabled>Qloo vs LLM-only</button>
+          <button role="tab" class="tab" id="tab-evidence" aria-controls="view-evidence" aria-selected="false" disabled>Evidence</button>
+        </div>
+
+        <div class="progress" id="progress" hidden><span id="progressBar"></span></div>
+
+        <div role="tabpanel" id="view-trace" aria-labelledby="tab-trace" class="view">
+          <div class="empty" id="traceEmpty">
+            <h3>Nothing running yet</h3>
+            <p>Choose a case study on the left and press <strong>Run greenlight analysis</strong>. You'll watch the agent plan its research and query Qloo live, step by step.</p>
+          </div>
+          <ol class="trace" id="trace" aria-live="polite"></ol>
+        </div>
+        <div role="tabpanel" id="view-memo" aria-labelledby="tab-memo" class="view" hidden>
+          <div id="scorecard"></div>
+          <div id="memo"></div>
+        </div>
+        <div role="tabpanel" id="view-blind" aria-labelledby="tab-blind" class="view" hidden>
+          <div id="blind"></div>
+        </div>
+        <div role="tabpanel" id="view-evidence" aria-labelledby="tab-evidence" class="view" hidden>
+          <div id="evidence"></div>
+        </div>
+      </section>
+    </section>
+
+    <!-- ===================================================== Quick scan -->
+    <section id="scanView" class="wrap scan" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Quick scan</h2>
+          <span class="hint">One Qloo lookup, no agent: anchor title → affinities in one domain</span>
+        </div>
+        <form id="scanForm" class="scan-form" novalidate>
+          <div class="field">
+            <label for="scanAnchor">Anchor title</label>
+            <input id="scanAnchor" type="text" maxlength="120" placeholder="Blade Runner 2049" required />
+          </div>
+          <div class="field">
+            <label for="scanDomain">Domain</label>
+            <select id="scanDomain">
+              <option value="urn:entity:brand">Brand partnerships</option>
+              <option value="urn:entity:artist">Soundtrack &amp; talent</option>
+              <option value="urn:entity:destination">Location &amp; tourism</option>
+              <option value="urn:entity:tv_show">Streaming adjacency</option>
+              <option value="urn:entity:podcast">Podcast media buys</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" id="scanBtn">Scan</button>
+        </form>
+        <div id="scanResults" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <span>CultureRisk AI · MIT licensed · Built for the Qloo Agentic Hackathon</span>
+    <a href="https://github.com/aShah2025/CultureRisk" rel="noopener">Source on GitHub</a>
+  </footer>
+</body>
+</html>

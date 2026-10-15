@@ -1,188 +1,130 @@
 # CultureRisk AI
 
-**Cultural-affinity intelligence that helps studios decide which films to greenlight.**
+**Know the audience before you greenlight.**
 
-CultureRisk AI is an executive decision cockpit for film studios, streamers and independent financiers. It uses [Qloo](https://qloo.com)'s cross-domain Taste AI to estimate how well a proposed film fits its target audience *before* the money is committed. It also lists the brands, music talent and filming locations that audience already likes.
+CultureRisk is an AI agent for film-studio executives. You give it a project and its comparable titles ("it's *X* meets *Y*"). It plans and runs its own research against **Qloo's cross-domain taste graph**, checks whether the comparable titles actually share an audience, finds under-priced brand, music and location partners, and writes a board-ready **greenlight memo**. Every claim in the memo traces back to a Qloo API call.
 
-> Built for the **Qloo Agentic Hackathon** · Deployed on **Netlify** · MIT Licensed
+> Built for the **Qloo Agentic Hackathon** · Claude agent + Qloo Taste AI · Netlify · MIT licensed
+
+**Live demo:** _add your Netlify URL here_ · **Try it in 60 seconds:** [see "For judges"](#for-judges-try-it-in-60-seconds)
 
 ---
 
-## 1. The problem: greenlights worth millions are still decided by instinct
+## Why this needs Qloo, not just an LLM
 
-A wide-release feature costs **$100M–$300M** once production and global marketing are included. Even a prestige drama often needs **$25M–$60M**. Most of that money is committed when the film is greenlit. That decision usually rests on:
+Studios commit **$30M–$300M** at greenlight, mostly on instinct and comparable-title math. The "X meets Y" pitch is the industry's core risk model, and nobody checks whether X's audience and Y's audience actually overlap.
 
-- **Comparable-title math** ("it's *X* meets *Y*"), which explains box office after the fact but says little about *who* the audience is or *what else they love*.
-- **Test screenings and tracking surveys**, which arrive too late to change the script, the casting or the partnership strategy.
-- **Siloed data**: box-office, music-streaming, travel and consumer-brand data almost never sit in the same room.
+An LLM alone can't answer this. It can describe *Blade Runner 2049* fans, but it has no measured data on what they love across brands, music and travel, or how that compares with *Ghost in the Shell* fans. Qloo does. CultureRisk proves the difference inside the product:
 
-The result is a high-variance portfolio. A single misread of the audience can erase a studio's quarterly margin. Partnership revenue from brand placements, soundtrack licensing and location incentives also tends to get negotiated late and priced poorly.
+**Qloo vs LLM-only blind-spot report.** While the agent works, the same model is asked, with no Qloo access, to guess this audience's brands, artists and places. The cockpit then diffs those guesses against Qloo's results and shows the share of audience signals **only Qloo surfaced**. Those are the partnerships and locations a generic model would have missed.
 
-## 2. The solution: cross-domain cultural risk scoring
-
-CultureRisk AI starts from a **box-office anchor**: a released film whose audience matches the project's target. Using Qloo's Insights API, it asks what that audience over-indexes on in other domains:
-
-| Qloo layer | Executive question it answers |
-|---|---|
-| `urn:entity:brand` | Which brand partners will this audience reward, and which will feel off-brand? |
-| `urn:entity:artist` | Which composers and artists will make the trailer and soundtrack land? |
-| `urn:entity:destination` | Which shooting locations match the audience's taste and unlock tourism co-marketing? |
-
-The cockpit turns the affinity results into four board-ready metrics:
-
-- **Verdict**: `GREENLIGHT` · `CONDITIONAL` · `HIGH RISK`
-- **Culture Risk Score** (0–100): the inverse of mean affinity, with a penalty when affinities are widely spread (a scattered taste profile means a less predictable audience).
-- **Alignment Index** (0–100): mean cross-domain affinity.
-- **Dispersion (σ)**: the standard deviation of affinity across the returned entities.
-
-Each recommended entity appears as a card showing its **affinity** and **popularity**, with taste tags and, in simulated mode, a short strategic rationale.
-
-## 3. Architecture
+## What the agent does
 
 ```
-┌────────────────────────┐   GET /api/qloo_bridge   ┌──────────────────────────────┐
-│  index.html            │ ───────────────────────▶ │ Netlify rewrite (netlify.toml)│
-│  Executive Cockpit UI  │                          │ /api/* → /.netlify/functions/*│
-└────────────────────────┘                          └──────────────┬───────────────┘
-                                                                   ▼
-                                               ┌──────────────────────────────────────┐
-                                               │ netlify/functions/qloo_bridge.js     │
-                                               │  • GET-only, input validation        │
-                                               │  • API key held server-side only     │
-                                               │  • 1) /search  → anchor entity ID    │
-                                               │  • 2) /v2/insights                   │
-                                               │       filter.type=<URN>              │
-                                               │       signal.interests.entities=<ID> │
-                                               │  • Fallback → simulated studio data  │
-                                               └──────────────────┬───────────────────┘
-                                                                  ▼
-                                                    Qloo Taste AI (X-Api-Key header)
+Brief ──▶ Claude (plans the research) ──▶ Qloo tools ──▶ evidence ledger ──▶ memo + deterministic scorecard
 ```
 
-### Dual-mode resilience
-
-The bridge **always answers with HTTP 200 and a usable payload**, so a live demo never breaks:
-
-| Condition | Mode | Behaviour |
+| Step | Tool | Qloo endpoint |
 |---|---|---|
-| `QLOO_HACKATHON_API_KEY` set to a real key and Qloo responds | `live` | Real Qloo affinities |
-| Key missing or a placeholder (`mock`, `demo`, `your_api_key_here`, …) | `mock` | Simulated studio data, no outbound call |
-| Upstream timeout, non-2xx response, anchor not found, or empty results | `mock` | Simulated studio data; `reason` field explains why |
+| Resolve each comparable title to a Qloo entity, catching remakes and same-name titles | `resolve_entities` | `GET /search` |
+| Turn the script's themes into taste tags | `find_taste_tags` | `GET /v2/tags` |
+| Map the audience across domains: brands, music, destinations, TV, podcasts | `get_audience_affinities` | `GET /v2/insights` (`filter.type`, `signal.interests.entities`, `signal.interests.tags`) |
+| **Stress-test the "X meets Y" pitch**: query each comp separately and measure taste-graph overlap | `stress_test_comps` | `GET /v2/insights` × N |
+| Write the greenlight memo (strict JSON schema) | `submit_greenlight_memo` | n/a |
 
-Simulated payloads are **clearly labelled** in the UI (amber `SIMULATED · STUDIO FALLBACK` badge), so simulated data is never presented as real. They are deterministic for each anchor and domain, which keeps demos reproducible.
+Claude decides which calls to make and in what order (in parallel where it can), reacts to what Qloo returns, and narrates each step. The cockpit streams that reasoning and every Qloo call live.
 
-### Security posture
+### Original metrics, computed only from Qloo data
 
-- The API key never leaves the server. The browser only sees `/api/qloo_bridge`.
-- The function rejects any method other than `GET` with a `405` and an `Allow` header.
-- `targetDomain` is checked against a fixed allowlist. `scriptAnchor` has control characters stripped and is capped at 120 characters.
-- Responses are sent with strict security headers (CSP, `X-Frame-Options: DENY`, `nosniff`, `no-store` on the API).
-- All dynamic UI content is HTML-escaped before rendering.
-- The script log textarea is **never transmitted**. It is analysed in the browser for genre signals only.
+- **Comp coherence.** Jaccard overlap of each comp's top Qloo affinities, blended with rank agreement. A low score means the hybrid audience the pitch assumes may not exist. Try the *Musical × Horror* preset.
+- **White space.** Entities whose Qloo affinity clearly exceeds their mainstream popularity. These partners over-index with this audience but aren't saturated, so they're cheaper to sign and more distinctive.
+- **Domain alignment and dispersion.** How strongly, and how consistently, the audience gravitates to each domain.
+- **Culture-risk score and verdict.** A composite of the metrics above: GREENLIGHT, CONDITIONAL, REWORK or PASS.
 
-## 4. Deployment on Netlify (zero-contact)
+### Trust by design
 
-| Setting | Value |
+- **Two verdicts.** The agent gives a reasoned verdict. A deterministic risk model, which never touches the LLM, gives a second verdict computed straight from the Qloo evidence ledger. If they disagree, the UI says so.
+- **Hallucination guard.** Each recommendation must cite a Qloo entity ID. The server checks every ID against what Qloo actually returned this session and flags anything unverified.
+- **Full audit trail.** The Evidence tab lists every Qloo call with its endpoint, signals, provenance (live, fallback or simulated), result count and latency.
+- **Export.** Copy the memo as Markdown, or download the full evidence bundle as JSON.
+
+## Architecture
+
+```
+public/                      Static cockpit: HTML + ES modules, no build step
+  js/session.js              Stepwise agent loop (retries, stop button)
+  js/blindspot.js            Qloo vs LLM-only diff
+netlify/functions/
+  agent.js                   GET capabilities · POST one agent step
+  baseline.js                LLM-only guesses (structured output)
+  qloo_bridge.js             Single-shot quick scan
+netlify/lib/
+  qloo-client.js             Live Qloo client (timeouts, normalisation, typed errors)
+  qloo-service.js            Per-call fallback + audit log (the data engine)
+  qloo-mock.js               Deterministic simulator (same interface)
+  risk-model.js              Coherence, white space, scorecard (pure functions)
+  agent/
+    tools.js                 Strict-schema tool definitions + validated executors
+    claude-runner.js         One Claude turn per request; echoes thinking blocks
+    scripted-runner.js       No-LLM fallback planner through the same tools
+    ledger.js                Evidence ledger carried between steps
+    finalize.js              Scorecard, grounding check, memo composer
+    prompt.js                System prompt, brief validation
+tests/                       node:test suite (risk math, Qloo client, both engines, handlers)
+scripts/dev-server.js        Zero-dependency local server
+```
+
+**Why stepwise?** Netlify synchronous functions are capped at 30 seconds. Each `POST /api/agent` runs exactly one Claude turn and its tool calls, then returns the session state for the browser to echo back. The result is unlimited agent depth, no session database, and a live trace for free. Assistant content, including thinking blocks, is echoed back unchanged, as the API requires.
+
+**Resilience.** The app never shows a blank screen:
+
+| Missing | Behaviour |
 |---|---|
-| Publish directory | `.` (repository root) |
-| Functions directory | `netlify/functions` |
-| Build command | *(none, no build step)* |
-| Runtime | Node 20 (native `fetch`) |
-| Dependencies | **None** |
+| `QLOO_HACKATHON_API_KEY` | Deterministic simulated Qloo data, labelled **simulated** everywhere |
+| A live Qloo call fails | That call falls back to the simulator and is labelled **fallback** with the error code |
+| `ANTHROPIC_API_KEY` | A scripted planner runs the same research through the same tools; the memo is templated |
+| A slow model step | The client retries with backoff; after 10 steps the server writes the memo straight from the evidence |
 
-### One-click / Git deploy
-1. Push this repository to GitHub.
-2. In Netlify, choose **Add new site → Import an existing project** and select the repo. `netlify.toml` provides all the settings.
-3. *(Optional, enables live mode)* Go to **Site configuration → Environment variables** and add:
-   - `QLOO_HACKATHON_API_KEY` = your Qloo hackathon key
-   - `QLOO_API_BASE` = *(optional)* defaults to `https://hackathon.api.qloo.com`
-4. Redeploy. Without step 3 the site runs in simulated mode.
+**Model.** Claude Opus 5.5 (`claude-opus-5-5`) with adaptive thinking (summarised reasoning is shown in the trace), strict tool schemas, prompt caching on the static tools and system prefix, and server-side refusal fallback (`fallbacks: "default"`). You can change these with `CULTURERISK_MODEL`, `CULTURERISK_EFFORT` and `CULTURERISK_MAX_STEPS`.
 
-### CLI deploy
+## For judges: try it in 60 seconds
+
+1. Open the live demo. The pills in the top-right show the agent engine and whether Qloo data is live.
+2. Pick a case study:
+   - **Cyberpunk Neo-Noir:** *Blade Runner 2049* × *Ghost in the Shell*
+   - **Royal Period Drama:** *The King's Speech* × *The Favourite*
+   - **Elevated Survival:** *The Revenant* × *Everest*
+   - **Risky Hybrid: Musical × Horror:** *La La Land* × *Hereditary*. Watch the comp stress test.
+3. Press **Run greenlight analysis** and watch the agent trace. Each card is a real Qloo call.
+4. Read the **Memo** (verdicts, scorecard, Qloo-verified recommendations, risk register), then open **Qloo vs LLM-only** and **Evidence**.
+5. Try your own project. Any title, any comps.
+
+API checks:
+
 ```bash
-npm install -g netlify-cli
+curl https://<site>.netlify.app/api/agent
+curl "https://<site>.netlify.app/api/qloo_bridge?scriptAnchor=Dune&targetDomain=urn:entity:artist"
 ```
+
+## Run it yourself
+
 ```bash
-netlify deploy --prod
+git clone https://github.com/aShah2025/CultureRisk && cd CultureRisk
+npm install
+cp .env.example .env      # optional: add QLOO_HACKATHON_API_KEY and ANTHROPIC_API_KEY
+npm start                 # http://localhost:8888
+npm test                  # test suite
 ```
 
-### Local development
-```bash
-netlify dev
-```
-Then open http://localhost:8888. The `/api/*` rewrite and the function run locally. To use live mode, put your key in a local `.env` file and don't commit it.
+**Deploy on Netlify:** import the repo. `netlify.toml` sets the publish directory (`public`), the functions directory, the `/api/*` rewrites and the security headers, and runs the tests on every build. Add `QLOO_HACKATHON_API_KEY` and `ANTHROPIC_API_KEY` under *Site configuration → Environment variables*, then redeploy.
 
-## 5. How judges can test the live system
+## Who it's for
 
-**Approximate time: 60 seconds.**
-
-1. **Open the deployed site.** The status pill in the top-right reads `STANDBY`.
-2. **Click a preset** under *Preset Case Study Evaluation*:
-   - **Cyberpunk Neo-Noir Thriller**: anchor *Blade Runner 2049*, layer *Soundtrack & Talent*
-   - **Royal Period Drama**: anchor *The King's Speech*, layer *Location & Tourism*
-   - **Elevated Survival Adventure**: anchor *The Revenant*, layer *Brand Partnerships*
-
-   The script log, anchor and layer fill in automatically.
-3. **Click ▶ Execute Culture Risk Analysis.**
-4. **Read the results:**
-   - The badge shows **`LIVE · QLOO`** (green) when real Qloo data came back, or **`SIMULATED · STUDIO FALLBACK`** (amber) with a `reason` value.
-   - The four KPI tiles show the verdict, risk, alignment and dispersion.
-   - Ranked entity cards show the affinity and popularity bars.
-5. **Try your own scenario.** Change the anchor title (e.g. *Dune*, *Little Women*, *Top Gun: Maverick*) or switch the layer and run it again.
-
-### Testing the API directly
-```bash
-curl "https://<your-site>.netlify.app/api/qloo_bridge?scriptAnchor=Blade%20Runner%202049&targetDomain=urn:entity:artist"
-```
-To confirm the GET-only rule, send a POST. Expect a 405:
-```bash
-curl -i -X POST "https://<your-site>.netlify.app/api/qloo_bridge"
-```
-
-#### Response shape
-```json
-{
-  "mode": "live | mock",
-  "reason": "null | api_key_not_configured | upstream_timeout | anchor_not_found | ...",
-  "anchor": { "title": "Blade Runner 2049", "entityId": "…" },
-  "targetDomain": "urn:entity:artist",
-  "domainLabel": "Soundtrack & Talent",
-  "generatedAt": "2026-10-14T00:00:00.000Z",
-  "summary": {
-    "alignmentIndex": 84,
-    "cultureRiskScore": 23,
-    "dispersion": 0.061,
-    "verdict": "GREENLIGHT",
-    "sampleSize": 6
-  },
-  "results": [
-    { "name": "…", "entityId": "…", "affinity": 0.93, "popularity": 0.95, "tags": ["…"], "rationale": "…" }
-  ]
-}
-```
-
-## 6. Market opportunity
-
-- **Studios and streamers:** a pre-greenlight risk score for every project on the development slate.
-- **Film finance and completion-bond firms:** an independent, data-backed check on the audience thesis.
-- **Brand-partnership and music-licensing teams:** placements and sync deals ranked by audience affinity instead of relationships.
-- **Film commissions and tourism boards:** evidence that a location's taste profile matches the production's audience.
-
-Next on the roadmap: LLM-based script parsing that maps treatments straight to Qloo tags, multi-anchor blending, demographic and geographic signal filters, and slate-level portfolio risk dashboards.
-
-## 7. Repository layout
-
-```
-.
-├── index.html                    # Executive cockpit (single-file UI)
-├── netlify.toml                  # Build, functions, /api rewrite, security headers
-├── netlify/
-│   └── functions/
-│       └── qloo_bridge.js        # Secure Qloo proxy with dual-mode fallback
-├── LICENSE                       # MIT
-└── README.md
-```
+- **Studio and streamer development executives:** a culture-risk read on every project in the slate before money is committed.
+- **Film financiers and completion-bond firms:** an independent, evidence-backed check on the audience thesis.
+- **Brand-partnership, music-supervision and live-events teams:** partners ranked by measured audience affinity, with white-space picks priced below their cultural pull.
+- **Film commissions and tourism boards:** proof that a location's taste profile matches a production's audience.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+[MIT](LICENSE)

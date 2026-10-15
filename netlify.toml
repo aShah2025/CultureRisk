@@ -1,49 +1,38 @@
 # =============================================================================
-# CultureRisk AI — Netlify Infrastructure Configuration
+# CultureRisk AI — Netlify configuration
 # -----------------------------------------------------------------------------
-# Zero-contact deployment: connect this repository to Netlify (or run
-# `netlify deploy --prod`) and no further configuration is required.
+#   public/              static cockpit (HTML + ES modules, no build step)
+#   netlify/functions/   serverless API (agent, baseline, qloo_bridge)
+#   netlify/lib/         shared backend modules (bundled into each function)
 #
-#   * Static cockpit UI (index.html) is served from the repository root.
-#   * Serverless backend lives in netlify/functions/.
-#   * Public clients call /api/<function>; Netlify rewrites internally to
-#     /.netlify/functions/<function>, so internal paths are never hard-coded
-#     in the browser.
+# Public routes are clean /api/* paths, rewritten to the functions:
+#   GET/POST /api/agent        → agent.js        (stepwise Claude + Qloo agent)
+#   POST     /api/baseline     → baseline.js     (LLM-only comparison)
+#   GET      /api/qloo_bridge  → qloo_bridge.js  (single-shot quick scan)
 #
-# SECRETS: never put QLOO_HACKATHON_API_KEY in this file. Set it in
-# Netlify UI → Site configuration → Environment variables. If it is absent,
-# the bridge automatically serves studio-grade simulated data.
+# SECRETS: set these in Netlify UI → Site configuration → Environment variables:
+#   QLOO_HACKATHON_API_KEY   live Qloo data (otherwise simulated)
+#   ANTHROPIC_API_KEY        Claude agent engine (otherwise scripted planner)
+# Never commit keys to this file.
 # =============================================================================
 
 [build]
-  # No build step — the cockpit is a single self-contained HTML document.
-  publish   = "."
+  publish   = "public"
   functions = "netlify/functions"
-  command   = ""
+  command   = "npm test"
 
 [build.environment]
-  # Node 20 provides a native global fetch() for the serverless bridge.
   NODE_VERSION = "20"
 
 [functions]
   node_bundler = "esbuild"
 
-# -----------------------------------------------------------------------------
-# Clean public API surface
-#   GET /api/qloo_bridge?scriptAnchor=...&targetDomain=...
-#   → /.netlify/functions/qloo_bridge?scriptAnchor=...&targetDomain=...
-# Status 200 = transparent rewrite (not a client-visible redirect).
-# Query strings are forwarded automatically.
-# -----------------------------------------------------------------------------
 [[redirects]]
   from   = "/api/*"
   to     = "/.netlify/functions/:splat"
   status = 200
   force  = true
 
-# -----------------------------------------------------------------------------
-# Security headers for every response.
-# -----------------------------------------------------------------------------
 [[headers]]
   for = "/*"
   [headers.values]
@@ -51,7 +40,7 @@
     X-Content-Type-Options  = "nosniff"
     Referrer-Policy         = "strict-origin-when-cross-origin"
     Permissions-Policy      = "camera=(), microphone=(), geolocation=()"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 [[headers]]
   for = "/api/*"

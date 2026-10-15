@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "culturerisk", "runtimeExecutable": "node", "runtimeArgs": ["scripts/dev-server.js"], "port": 8888 }
+  ]
+}
