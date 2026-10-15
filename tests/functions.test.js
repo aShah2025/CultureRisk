@@ -5,11 +5,10 @@ const assert = require('node:assert/strict');
 
 // Force simulated mode for every handler test.
 delete process.env.QLOO_HACKATHON_API_KEY;
-delete process.env.ANTHROPIC_API_KEY;
 
 const bridge = require('../netlify/functions/qloo_bridge');
 const agent = require('../netlify/functions/agent');
-const baseline = require('../netlify/functions/baseline');
+const mcp = require('../netlify/functions/mcp');
 
 const get = (params) => ({ httpMethod: 'GET', queryStringParameters: params });
 const post = (body) => ({ httpMethod: 'POST', body: JSON.stringify(body) });
@@ -31,7 +30,7 @@ test('qloo_bridge: GET only, validates input, returns labelled simulated data', 
 
 test('agent: GET reports capabilities', async () => {
   const body = parse(await agent.handler({ httpMethod: 'GET' }));
-  assert.equal(body.engine, 'scripted');
+  assert.equal(body.engine, 'autonomous-qloo-agent');
   assert.equal(body.qlooMode, 'simulated');
 });
 
@@ -41,37 +40,41 @@ test('agent: rejects bad methods, bad JSON, and briefs without anchors', async (
   assert.equal((await agent.handler(post({ brief: { anchors: [] } }))).statusCode, 400);
 });
 
-test('agent: a full scripted session completes through the HTTP handler', async () => {
+test('agent: a full session completes through the HTTP handler with echoed state', async () => {
   const brief = { title: 'T', anchors: ["The King's Speech", 'The Favourite'], domains: ['urn:entity:destination'], script: 'royal period drama' };
   let state = null;
   let body;
-  for (let i = 0; i < 10; i += 1) {
+  for (let i = 0; i < 30; i += 1) {
     const res = await agent.handler(post({ brief, state }));
     assert.equal(res.statusCode, 200);
     body = parse(res);
     if (body.status === 'done') break;
     state = body.state;
-    assert.equal(state.engine, 'scripted');
   }
   assert.equal(body.status, 'done');
-  assert.ok(body.memo.executive_summary.includes('T'));
+  assert.ok(body.memo.executiveSummary.startsWith('T scores'));
 });
 
-test('baseline: reports unavailable without an LLM key', async () => {
-  const body = parse(await baseline.handler(post({ brief: { anchors: ['Dune'] } })));
-  assert.equal(body.available, false);
-});
+test('mcp: initialize, tools/list, tools/call, notifications, and errors', async () => {
+  const init = parse(await mcp.handler(post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } } })));
+  assert.equal(init.result.protocolVersion, '2025-06-18');
+  assert.ok(init.result.capabilities.tools);
 
-test('baseline: parses structured guesses from an injected client', async () => {
-  process.env.ANTHROPIC_API_KEY = 'sk-test-key';
-  baseline.__setClientFactory(() => ({
-    messages: { create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ 'urn:entity:brand': ['Nike', 'Apple'] }) }] }) },
-  }));
-  try {
-    const body = parse(await baseline.handler(post({ brief: { anchors: ['Dune'], domains: ['urn:entity:brand'] } })));
-    assert.equal(body.available, true);
-    assert.deepEqual(body.guesses['urn:entity:brand'], ['Nike', 'Apple']);
-  } finally {
-    delete process.env.ANTHROPIC_API_KEY;
-  }
+  const note = await mcp.handler(post({ jsonrpc: '2.0', method: 'notifications/initialized' }));
+  assert.equal(note.statusCode, 202);
+
+  const list = parse(await mcp.handler(post({ jsonrpc: '2.0', id: 2, method: 'tools/list' })));
+  assert.deepEqual(list.result.tools.map((t) => t.name), ['greenlight_analysis', 'audience_affinities']);
+
+  const call = parse(await mcp.handler(post({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'greenlight_analysis', arguments: { title: 'X', comparable_titles: ['Arrival', 'Her'] } } })));
+  assert.equal(call.result.isError, undefined);
+  assert.ok(call.result.structuredContent.verdict);
+  assert.ok(call.result.structuredContent.recommendations.length > 0);
+
+  const aff = parse(await mcp.handler(post({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'audience_affinities', arguments: { comparable_titles: ['Arrival'], domain: 'urn:entity:artist' } } })));
+  assert.ok(aff.result.structuredContent.entities.length > 0);
+
+  const bad = parse(await mcp.handler(post({ jsonrpc: '2.0', id: 5, method: 'nope' })));
+  assert.equal(bad.error.code, -32601);
+  assert.equal((await mcp.handler({ httpMethod: 'POST', body: '{' })).statusCode, 400);
 });

@@ -7,7 +7,7 @@
 
 'use strict';
 
-/** Values treated as "no real key configured" for any provider. */
+/** Values treated as "no real key configured". */
 const PLACEHOLDER_KEYS = new Set([
   '',
   'mock',
@@ -19,10 +19,9 @@ const PLACEHOLDER_KEYS = new Set([
   'your_api_key_here',
   'your-qloo-api-key',
   'qloo_hackathon_api_key',
-  'your-anthropic-api-key',
 ]);
 
-/** Qloo output domains the product exposes, with cockpit labels. */
+/** Qloo output domains the product maps, with cockpit labels. */
 const DOMAINS = Object.freeze({
   'urn:entity:brand': 'Brand Partnerships',
   'urn:entity:artist': 'Soundtrack & Talent',
@@ -30,19 +29,6 @@ const DOMAINS = Object.freeze({
   'urn:entity:tv_show': 'Streaming Adjacency',
   'urn:entity:podcast': 'Podcast Media Buys',
 });
-
-/** Entity types accepted by Qloo's /search `types` parameter that the agent may use. */
-const SEARCH_TYPES = Object.freeze([
-  'urn:entity:movie',
-  'urn:entity:tv_show',
-  'urn:entity:artist',
-  'urn:entity:brand',
-  'urn:entity:destination',
-  'urn:entity:person',
-  'urn:entity:podcast',
-  'urn:entity:book',
-  'urn:entity:video_game',
-]);
 
 const DEFAULT_DOMAIN = 'urn:entity:brand';
 
@@ -60,24 +46,4 @@ function qlooConfig() {
   };
 }
 
-function agentConfig() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  return {
-    apiKey: isPlaceholderKey(apiKey) ? null : apiKey.trim(),
-    model: process.env.CULTURERISK_MODEL || 'claude-opus-5-5',
-    effort: process.env.CULTURERISK_EFFORT || 'medium',
-    // Netlify synchronous functions are capped at 30s; leave headroom for tool execution.
-    requestTimeoutMs: Number(process.env.CULTURERISK_LLM_TIMEOUT_MS) || 24000,
-    maxSteps: Number(process.env.CULTURERISK_MAX_STEPS) || 10,
-    maxStateBytes: 600 * 1024,
-  };
-}
-
-module.exports = {
-  DOMAINS,
-  SEARCH_TYPES,
-  DEFAULT_DOMAIN,
-  isPlaceholderKey,
-  qlooConfig,
-  agentConfig,
-};
+module.exports = { DOMAINS, DEFAULT_DOMAIN, isPlaceholderKey, qlooConfig };

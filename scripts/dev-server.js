@@ -77,5 +77,5 @@ http.createServer(async (req, res) => {
   }
 }).listen(PORT, () => {
   console.log(`CultureRisk AI running at http://localhost:${PORT}`);
-  console.log(`  Qloo: ${process.env.QLOO_HACKATHON_API_KEY ? 'live key set' : 'simulated'} · Agent: ${process.env.ANTHROPIC_API_KEY ? 'Claude' : 'scripted planner'}`);
+  console.log(`  Qloo data: ${process.env.QLOO_HACKATHON_API_KEY ? 'live (key set)' : 'simulated (no QLOO_HACKATHON_API_KEY)'}`);
 });

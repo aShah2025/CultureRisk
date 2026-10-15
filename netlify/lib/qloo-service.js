@@ -9,9 +9,9 @@
  *   • Live call fails/empty    → simulated backend, provenance "fallback",
  *                                with the failure code recorded
  *
- * Every call is appended to an audit log (`calls`) so the UI can show judges
- * exactly which Qloo endpoints were hit, with which signals, and what came
- * back — the evidence trail behind each recommendation.
+ * Every call is appended to an audit log (`calls`), so the UI can show exactly
+ * which Qloo endpoints were hit, with which parameters, and what came back:
+ * the evidence trail behind each recommendation.
  */
 
 'use strict';
@@ -20,9 +20,11 @@ const { createQlooClient } = require('./qloo-client');
 const { createMockQlooClient } = require('./qloo-mock');
 const { qlooConfig } = require('./config');
 
+const isSimulatedId = (id) => String(id).startsWith('mock:');
+
 /**
  * @param {object} [opts]
- * @param {object} [opts.config]    Override qlooConfig() (tests).
+ * @param {object} [opts.config]     Override qlooConfig() (tests).
  * @param {object} [opts.liveClient] Inject a live client (tests).
  */
 function createQlooService(opts = {}) {
@@ -31,27 +33,37 @@ function createQlooService(opts = {}) {
   const mock = createMockQlooClient();
   const calls = [];
 
-  async function run(endpoint, signals, liveFn, mockFn) {
+  /**
+   * @param {string} endpoint   Display label for the audit log.
+   * @param {object} params     Qloo parameters, recorded verbatim.
+   * @param {Function} invoke   (client) => Promise<data>
+   * @param {string[]} ids      Signal IDs; simulated IDs skip the live API.
+   */
+  async function run(endpoint, params, invoke, ids = []) {
     const started = Date.now();
     let provenance = 'simulated';
     let failure = null;
     let data;
 
     if (live) {
-      try {
-        data = await liveFn(live);
-        provenance = 'live';
-      } catch (err) {
-        failure = err?.code || 'upstream_error';
-        console.warn(`[qloo] ${endpoint} live call failed (${failure}); using simulated data.`);
+      if (ids.some(isSimulatedId)) {
+        failure = 'simulated_signal';
+      } else {
+        try {
+          data = await invoke(live);
+          provenance = 'live';
+        } catch (err) {
+          failure = err?.code || 'upstream_error';
+          console.warn(`[qloo] ${endpoint} live call failed (${failure}); using simulated data.`);
+        }
       }
     }
     if (data === undefined) {
-      data = await mockFn(mock);
+      data = await invoke(mock);
       provenance = live ? 'fallback' : 'simulated';
     }
 
-    calls.push({ endpoint, signals, provenance, failure, count: Array.isArray(data) ? data.length : 0, ms: Date.now() - started });
+    calls.push({ endpoint, params, provenance, failure, count: Array.isArray(data) ? data.length : 0, ms: Date.now() - started });
     return { data, provenance, failure };
   }
 
@@ -61,27 +73,38 @@ function createQlooService(opts = {}) {
     calls,
 
     search(query, type, take = 3) {
-      return run('/search', { query, types: type }, (c) => c.search(query, type, take), (c) => c.search(query, type, take));
+      return run('GET /search', { query, types: type, take }, (c) => c.search(query, type, take));
     },
 
     tags(query, take = 5) {
-      return run('/v2/tags', { 'filter.query': query }, (c) => c.tags(query, take), (c) => c.tags(query, take));
+      return run('GET /v2/tags', { 'filter.query': query, 'feature.typo_tolerance': true, take }, (c) => c.tags(query, take));
     },
 
-    insights(params) {
-      const signals = {
-        'filter.type': params.filterType,
-        'signal.interests.entities': params.entityIds || [],
-        'signal.interests.tags': params.tagIds || [],
+    insights(q) {
+      const params = {
+        'filter.type': q.filterType,
+        'signal.interests.entities': q.entityIds || [],
+        'signal.interests.tags': q.tagIds || [],
+        ...(q.explain ? { 'feature.explainability': true } : {}),
+        ...(typeof q.popularityMax === 'number' ? { 'filter.popularity.max': q.popularityMax } : {}),
+        take: q.take,
       };
-      // Simulated IDs are meaningless to the live API; route those straight to the simulator.
-      const usesMockIds = [...(params.entityIds || []), ...(params.tagIds || [])].some((id) => String(id).startsWith('mock:'));
-      return run(
-        '/v2/insights',
-        signals,
-        usesMockIds ? () => Promise.reject(Object.assign(new Error('simulated_signal'), { code: 'simulated_signal' })) : (c) => c.insights(params),
-        (c) => c.insights(params),
-      );
+      return run('GET /v2/insights', params, (c) => c.insights(q), [...(q.entityIds || []), ...(q.tagIds || [])]);
+    },
+
+    demographics(q) {
+      const params = { 'filter.type': 'urn:demographics', 'signal.interests.entities': q.entityIds || [], 'signal.interests.tags': q.tagIds || [] };
+      return run('GET /v2/insights', params, (c) => c.demographics(q), [...(q.entityIds || []), ...(q.tagIds || [])]);
+    },
+
+    tasteTags(q) {
+      const params = { 'filter.type': 'urn:tag', 'signal.interests.entities': q.entityIds || [], take: q.take };
+      return run('GET /v2/insights', params, (c) => c.tasteTags(q), q.entityIds || []);
+    },
+
+    compare(q) {
+      const params = { 'a.signal.interests.entities': q.a, 'b.signal.interests.entities': q.b, take: q.take };
+      return run('GET /v2/analysis/compare', params, (c) => c.compare(q), [...q.a, ...q.b]);
     },
   };
 }

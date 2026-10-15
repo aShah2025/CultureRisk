@@ -40,7 +40,7 @@ test('insights sends documented query params and X-Api-Key header', async () => 
   assert.equal(url.searchParams.get('signal.interests.entities'), 'A,B');
   assert.equal(url.searchParams.get('signal.interests.tags'), 'T');
   assert.equal(headers['X-Api-Key'], 'k-123');
-  assert.deepEqual(out[0], { entityId: 'E1', name: 'Porsche', type: null, year: null, affinity: 0.8, popularity: 0.9, tags: ['Luxury'] });
+  assert.deepEqual(out[0], { entityId: 'E1', name: 'Porsche', type: null, year: null, disambiguation: null, affinity: 0.8, popularity: 0.9, audienceGrowth: null, explainability: null, tags: ['Luxury'] });
 });
 
 test('insights throws QlooError on empty results and HTTP errors', async () => {
@@ -65,7 +65,8 @@ test('service uses simulated data when no key is configured', async () => {
   const r = await svc.insights({ filterType: 'urn:entity:artist', entityIds: ['x'], take: 6 });
   assert.equal(r.provenance, 'simulated');
   assert.equal(r.data.length, 6);
-  assert.equal(svc.calls[0].endpoint, '/v2/insights');
+  assert.equal(svc.calls[0].endpoint, 'GET /v2/insights');
+  assert.equal(svc.calls[0].params['filter.type'], 'urn:entity:artist');
 });
 
 test('service falls back per call when live Qloo fails, recording the failure', async () => {
@@ -93,4 +94,39 @@ test('simulator is deterministic and anchor-sensitive', async () => {
   assert.deepEqual(a1, a2);
   assert.notDeepEqual(a1.map((e) => e.name), b.map((e) => e.name));
   assert.ok(a1.every((e) => e.entityId.startsWith('mock:')));
+});
+
+test('demographics uses filter.type=urn:demographics and normalises age/gender', async () => {
+  const { impl, seen } = fakeFetch({
+    '/v2/insights': { body: { results: { demographics: [{ entity_id: 'E1', query: { age: { '25_to_29': 0.43, '55_and_older': -0.17 }, gender: { male: 0.08, female: -0.08 } } }] } } },
+  });
+  const out = await createQlooClient(cfg(impl)).demographics({ entityIds: ['E1'] });
+  assert.equal(seen[0].url.searchParams.get('filter.type'), 'urn:demographics');
+  assert.deepEqual(out[0], { id: 'E1', age: { '25_to_29': 0.43, '55_and_older': -0.17 }, gender: { male: 0.08, female: -0.08 } });
+});
+
+test('taste analysis uses filter.type=urn:tag', async () => {
+  const { impl, seen } = fakeFetch({ '/v2/insights': { body: { results: { tags: [{ tag_id: 'urn:tag:keyword:media:dark', name: 'Dark', subtype: 'urn:tag:keyword:media' }] } } } });
+  const out = await createQlooClient(cfg(impl)).tasteTags({ entityIds: ['E1'], take: 5 });
+  assert.equal(seen[0].url.searchParams.get('filter.type'), 'urn:tag');
+  assert.equal(out[0].tagId, 'urn:tag:keyword:media:dark');
+});
+
+test('compare sends a./b. signal groups to /v2/analysis/compare', async () => {
+  const { impl, seen } = fakeFetch({ '/v2/analysis/compare': { body: { results: [{ tag_id: 'urn:tag:x', name: 'Dark' }] } } });
+  const out = await createQlooClient(cfg(impl)).compare({ a: ['A'], b: ['B', 'C'] });
+  assert.equal(seen[0].url.searchParams.get('a.signal.interests.entities'), 'A');
+  assert.equal(seen[0].url.searchParams.get('b.signal.interests.entities'), 'B,C');
+  assert.equal(out[0].name, 'Dark');
+});
+
+test('insights requests explainability and popularity ceilings when asked, and parses them', async () => {
+  const { impl, seen } = fakeFetch({
+    '/v2/insights': { body: { results: { entities: [{ entity_id: 'E', name: 'N', query: { affinity: 0.9, explainability: { 'signal.interests.entities': [{ entity_id: 'A', score: 0.7 }, { entity_id: 'B', score: 0.3 }] }, measurements: { audience_growth: 0.05 } } }] } } },
+  });
+  const out = await createQlooClient(cfg(impl)).insights({ filterType: 'urn:entity:brand', entityIds: ['A', 'B'], explain: true, popularityMax: 0.6 });
+  assert.equal(seen[0].url.searchParams.get('feature.explainability'), 'true');
+  assert.equal(seen[0].url.searchParams.get('filter.popularity.max'), '0.6');
+  assert.deepEqual(out[0].explainability, { A: 0.7, B: 0.3 });
+  assert.equal(out[0].audienceGrowth, 0.05);
 });

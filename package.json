@@ -1,8 +1,8 @@
 {
   "name": "culturerisk-ai",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "Agentic greenlight-risk analyst for film studios: Claude plans and runs Qloo cross-domain taste queries, stress-tests comparable titles, and writes a board-ready greenlight memo.",
+  "description": "Autonomous greenlight-risk research agent for film studios, built entirely on Qloo's taste graph: stress-tests comparable titles, measures concept fit, and maps under-priced brand, music, and location partners. Also served as an MCP tool.",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -11,9 +11,6 @@
     "start": "node scripts/dev-server.js",
     "dev": "netlify dev",
     "test": "node --test tests/*.test.js",
-    "check": "node --check netlify/functions/*.js netlify/lib/*.js netlify/lib/agent/*.js"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.134.0"
+    "check": "node --check netlify/functions/*.js netlify/lib/*.js netlify/lib/agent/*.js scripts/*.js"
   }
 }

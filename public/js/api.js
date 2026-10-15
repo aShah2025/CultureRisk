@@ -2,6 +2,7 @@
  * CultureRisk AI — API client for the same-origin Netlify routes.
  *   /api/agent        → netlify/functions/agent.js
  *   /api/qloo_bridge  → netlify/functions/qloo_bridge.js
+ *   /api/mcp          → netlify/functions/mcp.js (for external agents)
  */
 
 const STEP_TIMEOUT_MS = 32000; // just above Netlify's 30 s function cap
@@ -46,8 +47,6 @@ async function request(url, { method = 'GET', body, signal, timeoutMs = STEP_TIM
 export const getCapabilities = () => request('/api/agent', { timeoutMs: 8000 });
 
 export const agentStep = (brief, state, signal) => request('/api/agent', { method: 'POST', body: { brief, state }, signal });
-
-export const getBaseline = (brief, signal) => request('/api/baseline', { method: 'POST', body: { brief }, signal });
 
 export function quickScan(anchor, domain, signal) {
   const params = new URLSearchParams({ scriptAnchor: anchor, targetDomain: domain });

@@ -2,14 +2,14 @@
  * CultureRisk AI — agent session controller.
  *
  * Drives the stepwise agent protocol: POST a step, render its events, echo
- * the returned state, repeat until "done". Retryable failures such as a slow
- * model step or a rate limit are retried with backoff. Stop aborts the
+ * the returned state, repeat until "done". Retryable failures (a slow step, a
+ * network blip) are retried with backoff. Stop aborts the
  * in-flight request.
  */
 
 import { agentStep } from './api.js';
 
-const MAX_ITERATIONS = 16;
+const MAX_ITERATIONS = 30;
 const MAX_RETRIES_PER_STEP = 2;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

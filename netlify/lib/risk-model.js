@@ -1,10 +1,9 @@
 /**
  * CultureRisk AI — deterministic risk model.
  *
- * Turns raw Qloo affinity data into the board-level metrics. This is plain
- * arithmetic over Qloo output. The LLM never invents these numbers: it reads
- * them back from tool results, and the final scorecard is recomputed here from
- * the evidence ledger.
+ * Turns raw Qloo data into the board-level metrics. Plain, auditable
+ * arithmetic over Qloo output, with no model in the loop. The scorecard is
+ * recomputed from the evidence ledger at the end of every session.
  *
  * Metrics
  * ───────
@@ -21,7 +20,12 @@
  *                    popularity. These are partners that over-index with this
  *                    audience but are not yet saturated, so they are cheaper
  *                    to sign and more distinctive.
- *  Culture risk      0–100 composite (lower is safer) → verdict.
+ *  Demographic fit   Cosine similarity of the comps' Qloo age/gender affinity
+ *                    profiles. Do the comps court the same demographic?
+ *  Concept fit       Overlap between the audience Qloo finds for the script's
+ *                    own themes (tags) and the comps' audience. Does the
+ *                    concept actually match the comps it is sold on?
+ *  Culture risk      0–100 weighted composite (lower is safer) → verdict.
  */
 
 'use strict';
@@ -115,6 +119,48 @@ function compCoherence(perAnchor, topN = 6) {
   };
 }
 
+/**
+ * Demographic similarity of two audiences (0–1).
+ * Cosine similarity over Qloo's age-bucket and gender affinity scores (each in
+ * [-1, 1]), mapped from [-1, 1] to [0, 1]. Two comps that skew to opposite
+ * age groups score near 0, meaning the pitch is courting two different demos.
+ */
+function demographicSimilarity(a, b) {
+  const keys = [...new Set([...Object.keys(a.age || {}), ...Object.keys(b.age || {})])];
+  const va = [...keys.map((k) => a.age?.[k] ?? 0), a.gender?.male ?? 0];
+  const vb = [...keys.map((k) => b.age?.[k] ?? 0), b.gender?.male ?? 0];
+  const dot = va.reduce((s, x, i) => s + x * vb[i], 0);
+  const na = Math.sqrt(va.reduce((s, x) => s + x * x, 0));
+  const nb = Math.sqrt(vb.reduce((s, x) => s + x * x, 0));
+  if (!na || !nb) return null;
+  return round((dot / (na * nb) + 1) / 2);
+}
+
+/** Mean pairwise demographic similarity across ≥2 profiles. */
+function demographicCoherence(profiles) {
+  if (!Array.isArray(profiles) || profiles.length < 2) return null;
+  const sims = [];
+  for (let i = 0; i < profiles.length; i += 1) {
+    for (let j = i + 1; j < profiles.length; j += 1) {
+      const s = demographicSimilarity(profiles[i], profiles[j]);
+      if (s !== null) sims.push(s);
+    }
+  }
+  return sims.length ? round(mean(sims)) : null;
+}
+
+/** The age bucket an audience over-indexes on most, and its gender lean. */
+function demographicHeadline(profile) {
+  const ages = Object.entries(profile.age || {}).sort((x, y) => y[1] - x[1]);
+  const male = profile.gender?.male ?? 0;
+  return {
+    peakAge: ages[0] ? ages[0][0] : null,
+    peakScore: ages[0] ? ages[0][1] : null,
+    genderLean: Math.abs(male) < 0.05 ? 'balanced' : male > 0 ? 'male' : 'female',
+    genderScore: round(Math.abs(male), 2),
+  };
+}
+
 const VERDICTS = Object.freeze([
   [30, 'GREENLIGHT'],
   [45, 'CONDITIONAL GREENLIGHT'],
@@ -126,41 +172,66 @@ function verdictFor(risk) {
   return VERDICTS.find(([limit]) => risk <= limit)[1];
 }
 
+/** Component weights for the composite; missing components are renormalised away. */
+const WEIGHTS = Object.freeze({ alignment: 0.4, coherence: 0.25, conceptFit: 0.2, demographics: 0.15 });
+
 /**
  * Composite scorecard.
  * @param {object} input
- * @param {Object<string, Array>} input.domains    Map of domain URN → blended-signal entities.
- * @param {number|null} input.coherence             0–1 comp coherence, or null with <2 anchors.
- * @param {boolean} input.liveData                  Whether any evidence came from live Qloo.
+ * @param {Object<string, Array>} input.domains      Domain URN → blended-signal entities.
+ * @param {number|null} [input.coherence]            0–1 comp taste coherence.
+ * @param {number|null} [input.conceptFit]           0–1 concept-to-comp audience fit.
+ * @param {number|null} [input.demographics]         0–1 comp demographic coherence.
+ * @param {boolean} [input.liveData]                 Whether any evidence came from live Qloo.
  */
-function scorecard({ domains, coherence = null, liveData = false }) {
+function scorecard({ domains, coherence = null, conceptFit = null, demographics = null, liveData = false }) {
   const profiles = Object.fromEntries(Object.entries(domains || {}).map(([urn, ents]) => [urn, domainProfile(ents)]));
   const usable = Object.values(profiles).filter((p) => p.alignment !== null);
 
   if (usable.length === 0) {
-    return { profiles, alignment: null, coherence: null, cultureRiskScore: null, verdict: 'INSUFFICIENT SIGNAL', confidence: 'low' };
+    return { profiles, alignment: null, coherence: null, conceptFit: null, demographics: null, cultureRiskScore: null, verdict: 'INSUFFICIENT SIGNAL', confidence: 'low', components: [] };
   }
 
+  const pct = (v) => (typeof v === 'number' ? Math.round(v * 100) : null);
   const alignment = Math.round(mean(usable.map((p) => p.alignment)));
   const dispersion = mean(usable.map((p) => p.dispersion));
-  const coherencePct = typeof coherence === 'number' ? Math.round(coherence * 100) : null;
+  const parts = {
+    alignment,
+    coherence: pct(coherence),
+    conceptFit: pct(conceptFit),
+    demographics: pct(demographics),
+  };
 
-  const base = coherencePct === null ? alignment : 0.65 * alignment + 0.35 * coherencePct;
+  const present = Object.entries(parts).filter(([, v]) => v !== null);
+  const weightSum = present.reduce((s, [k]) => s + WEIGHTS[k], 0);
+  const base = present.reduce((s, [k, v]) => s + (WEIGHTS[k] / weightSum) * v, 0);
   const cultureRiskScore = Math.round(clamp(100 - base + dispersion * 80, 0, 100));
 
   // Confidence grows with breadth of evidence and live provenance.
-  const evidencePoints = usable.length + (coherencePct !== null ? 1 : 0) + (liveData ? 1 : 0);
-  const confidence = evidencePoints >= 4 ? 'high' : evidencePoints >= 2 ? 'medium' : 'low';
+  const evidencePoints = usable.length + present.length - 1 + (liveData ? 2 : 0);
+  let confidence = evidencePoints >= 6 ? 'high' : evidencePoints >= 3 ? 'medium' : 'low';
+  // Simulated evidence can never support high confidence.
+  if (!liveData && confidence === 'high') confidence = 'medium';
 
   return {
     profiles,
-    alignment,
-    coherence: coherencePct,
+    ...parts,
     dispersion: round(dispersion),
     cultureRiskScore,
     verdict: verdictFor(cultureRiskScore),
     confidence,
+    components: present.map(([k, v]) => ({ key: k, value: v, weight: round(WEIGHTS[k] / weightSum, 2) })),
   };
 }
 
-module.exports = { domainProfile, whiteSpace, pairCoherence, compCoherence, scorecard, verdictFor };
+module.exports = {
+  domainProfile,
+  whiteSpace,
+  pairCoherence,
+  compCoherence,
+  demographicSimilarity,
+  demographicCoherence,
+  demographicHeadline,
+  scorecard,
+  verdictFor,
+};

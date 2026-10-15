@@ -4,15 +4,14 @@
 
 import { $, $$, esc } from './dom.js';
 import { PRESETS } from './presets.js';
-import { getCapabilities, getBaseline, quickScan } from './api.js';
+import { getCapabilities, quickScan } from './api.js';
 import { AgentSession } from './session.js';
-import { appendTraceEvents, renderScorecard, renderMemo, renderEvidence, renderQuickScan, memoToMarkdown } from './render.js';
-import { computeBlindSpots, renderBlindSpots } from './blindspot.js';
+import { appendTraceEvents, renderMemo, renderAudience, renderEvidence, renderQuickScan, memoToMarkdown } from './render.js';
 
-const state = { session: null, result: null, brief: null, baseline: null, caps: null, activePreset: null };
+const state = { session: null, result: null, brief: null, caps: null };
 
 /* -------------------------------------------------------------------------- */
-/* Status pills                                                                */
+/* Status                                                                      */
 /* -------------------------------------------------------------------------- */
 
 function setPill(el, tone, text) {
@@ -22,19 +21,26 @@ function setPill(el, tone, text) {
 
 async function loadCapabilities() {
   try {
-    const caps = await getCapabilities();
-    state.caps = caps;
-    setPill($('#enginePill'), caps.engine === 'claude' ? 'ok' : 'warn', caps.engine === 'claude' ? `Agent: ${caps.model}` : 'Agent: scripted planner');
-    setPill($('#qlooPill'), caps.qlooMode === 'live' ? 'ok' : 'warn', caps.qlooMode === 'live' ? 'Qloo: live' : 'Qloo: simulated');
+    state.caps = await getCapabilities();
+    const live = state.caps.qlooMode === 'live';
+    setPill($('#qlooPill'), live ? 'ok' : 'warn', live ? 'Qloo: live data' : 'Qloo: simulated data');
   } catch {
-    setPill($('#enginePill'), 'bad', 'API offline');
-    setPill($('#qlooPill'), 'bad', 'Qloo: unknown');
+    setPill($('#qlooPill'), 'bad', 'API offline');
   }
 }
 
 /* -------------------------------------------------------------------------- */
 /* Presets & brief                                                             */
 /* -------------------------------------------------------------------------- */
+
+function applyPreset(p, btn) {
+  $('#title').value = p.title;
+  $('#anchors').value = p.anchors.join(', ');
+  $('#budget').value = p.budgetMillions;
+  $('#script').value = p.script;
+  $$('#domainChecks input').forEach((c) => { c.checked = p.domains.includes(c.value); });
+  $$('.preset').forEach((b) => b.classList.toggle('is-active', b === btn));
+}
 
 function renderPresets() {
   $('#presets').innerHTML = PRESETS.map((p) => `
@@ -46,20 +52,14 @@ function renderPresets() {
   $('#presets').addEventListener('click', (e) => {
     const btn = e.target.closest('.preset');
     if (!btn) return;
-    const p = PRESETS.find((x) => x.id === btn.dataset.id);
-    $('#title').value = p.title;
-    $('#anchors').value = p.anchors.join(', ');
-    $('#budget').value = p.budgetMillions;
-    $('#script').value = p.script;
-    $$('#domainChecks input').forEach((c) => { c.checked = p.domains.includes(c.value); });
-    $$('.preset').forEach((b) => b.classList.toggle('is-active', b === btn));
+    applyPreset(PRESETS.find((x) => x.id === btn.dataset.id), btn);
     $('#runBtn').focus();
   });
 }
 
 function readBrief() {
   return {
-    title: $('#title').value.trim(),
+    title: $('#title').value.trim() || 'Untitled Project',
     anchors: $('#anchors').value.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 3),
     budgetMillions: Number($('#budget').value) || null,
     domains: $$('#domainChecks input:checked').map((c) => c.value),
@@ -68,9 +68,8 @@ function readBrief() {
 }
 
 function formError(message) {
-  const el = $('#formError');
-  el.hidden = !message;
-  el.textContent = message || '';
+  $('#formError').hidden = !message;
+  $('#formError').textContent = message || '';
 }
 
 /* -------------------------------------------------------------------------- */
@@ -86,9 +85,7 @@ function selectTab(id) {
   });
 }
 
-function enableResultTabs(enabled) {
-  ['#tab-memo', '#tab-blind', '#tab-evidence'].forEach((s) => { $(s).disabled = !enabled; });
-}
+const enableResultTabs = (enabled) => ['#tab-memo', '#tab-audience', '#tab-evidence'].forEach((s) => { $(s).disabled = !enabled; });
 
 /* -------------------------------------------------------------------------- */
 /* Agent run                                                                   */
@@ -96,58 +93,51 @@ function enableResultTabs(enabled) {
 
 function setRunning(running) {
   $('#runBtn').disabled = running;
-  $('#runBtn').textContent = running ? 'Agent working…' : 'Run greenlight analysis';
+  $('#runBtn').textContent = running ? 'Researching…' : 'Run greenlight analysis';
   $('#stopBtn').hidden = !running;
   $('#progress').hidden = !running;
   $$('#briefForm input, #briefForm textarea, .preset').forEach((el) => { el.disabled = running; });
 }
 
-function setProgress(step, total) {
-  const max = total || state.caps?.maxSteps || 8;
-  $('#progressBar').style.width = `${Math.min(96, (step / max) * 100)}%`;
+function setProgress(done, total, calls) {
+  $('#progressBar').style.width = `${Math.min(97, (done / Math.max(total, 1)) * 100)}%`;
+  $('#progressText').textContent = `Step ${done} of ~${total} · ${calls} Qloo calls`;
 }
 
 async function runAnalysis(event) {
   event.preventDefault();
   const brief = readBrief();
   if (brief.anchors.length === 0) return formError('Add at least one comparable title.');
-  if (brief.domains.length === 0) return formError('Select at least one taste domain.');
+  if (brief.domains.length === 0) return formError('Select at least one partner domain.');
   formError('');
 
-  state.brief = { ...brief, title: brief.title || 'Untitled Project' };
+  state.brief = brief;
   state.result = null;
-  state.baseline = null;
   $('#trace').innerHTML = '';
   $('#traceEmpty').hidden = true;
   $('#reportTools').hidden = true;
   enableResultTabs(false);
   selectTab('tab-trace');
   setRunning(true);
-  setProgress(0);
+  setProgress(0, 10, 0);
+  if (window.innerWidth < 1020) $('#reportTitle').scrollIntoView({ behavior: 'smooth' });
 
-  const session = new AgentSession(state.brief, {
+  let calls = 0;
+  const session = new AgentSession(brief, {
     onStep: (r) => {
       appendTraceEvents($('#trace'), r.step, r.events || []);
-      setProgress(r.step, r.totalSteps);
+      calls += (r.events || []).filter((e) => e.type === 'calls').reduce((s, e) => s + e.calls.length, 0);
+      if (r.progress) setProgress(r.progress.done, r.progress.total, calls);
     },
-    onRetry: (err, n) => appendTraceEvents($('#trace'), '↻', [{ type: 'narration', text: `${err.message} (retry ${n})` }]),
+    onRetry: (err, n) => appendTraceEvents($('#trace'), '↻', [{ type: 'decision', text: `${err.message} Retrying (${n}).` }]),
   });
   state.session = session;
 
-  // The LLM-only baseline runs in parallel and never blocks the agent.
-  const baselinePromise = getBaseline(state.brief, session.controller.signal).catch(() => ({ available: false }));
-
   try {
-    const result = await session.run();
-    state.result = result;
-    state.baseline = await baselinePromise;
+    state.result = await session.run();
     showResult();
   } catch (err) {
-    if (!err.cancelled) {
-      appendTraceEvents($('#trace'), '!', [{ type: 'narration', text: `Analysis failed: ${err.message}` }]);
-    } else {
-      appendTraceEvents($('#trace'), '■', [{ type: 'narration', text: 'Stopped by user.' }]);
-    }
+    appendTraceEvents($('#trace'), '!', [{ type: 'decision', text: err.cancelled ? 'Stopped by user.' : `Analysis failed: ${err.message}` }]);
   } finally {
     setRunning(false);
     state.session = null;
@@ -156,19 +146,9 @@ async function runAnalysis(event) {
 
 function showResult() {
   const r = state.result;
-  $('#scorecard').innerHTML = renderScorecard(r.scorecard, r.memo);
-  $('#memo').innerHTML = renderMemo(r.memo, r.memoAuthor, r.grounding);
+  $('#memo').innerHTML = renderMemo(r, state.brief);
+  $('#audience').innerHTML = renderAudience(r.evidence);
   $('#evidence').innerHTML = renderEvidence(r.evidence);
-
-  if (state.baseline?.available) {
-    const report = computeBlindSpots(state.baseline.guesses, r.evidence.domains);
-    $('#blind').innerHTML = renderBlindSpots(report, state.baseline.model);
-  } else {
-    $('#blind').innerHTML = `
-      <div class="empty"><h3>LLM-only baseline unavailable</h3>
-      <p>This comparison needs the Claude engine (set <code>ANTHROPIC_API_KEY</code>). It asks the same model to guess this audience's tastes with no Qloo access, then shows what only Qloo surfaced.</p></div>`;
-  }
-
   enableResultTabs(true);
   $('#reportTools').hidden = false;
   selectTab('tab-memo');
@@ -179,10 +159,15 @@ function showResult() {
 /* Export                                                                      */
 /* -------------------------------------------------------------------------- */
 
+function flash(btn, text) {
+  const original = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => { btn.textContent = original; }, 1600);
+}
+
 async function copyMarkdown() {
-  const md = memoToMarkdown(state.brief, state.result);
   try {
-    await navigator.clipboard.writeText(md);
+    await navigator.clipboard.writeText(memoToMarkdown(state.brief, state.result));
     flash($('#copyMd'), 'Copied ✓');
   } catch {
     flash($('#copyMd'), 'Copy failed');
@@ -190,22 +175,16 @@ async function copyMarkdown() {
 }
 
 function downloadJson() {
-  const blob = new Blob([JSON.stringify({ brief: state.brief, ...state.result, baseline: state.baseline }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ brief: state.brief, ...state.result }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `culturerisk-${(state.brief.title || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
+  a.download = `culturerisk-${state.brief.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-function flash(btn, text) {
-  const original = btn.textContent;
-  btn.textContent = text;
-  setTimeout(() => { btn.textContent = original; }, 1600);
-}
-
 /* -------------------------------------------------------------------------- */
-/* Quick scan & mode switch                                                    */
+/* Quick scan, MCP page & mode switch                                          */
 /* -------------------------------------------------------------------------- */
 
 async function runScan(event) {
@@ -223,15 +202,23 @@ async function runScan(event) {
   }
 }
 
+function fillMcpUrls() {
+  const url = `${location.origin}/api/mcp`;
+  $('#mcpUrl').textContent = url;
+  $('#mcpCmd').textContent = `claude mcp add --transport http culturerisk ${url}`;
+  $('#mcpCurl').textContent = `curl -s ${url} -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`;
+}
+
 function setMode(mode) {
   $$('.mode').forEach((b) => {
     const on = b.dataset.mode === mode;
     b.classList.toggle('is-active', on);
     b.setAttribute('aria-pressed', String(on));
   });
+  $('#hero').hidden = mode !== 'agent';
   $('#workspace').hidden = mode !== 'agent';
-  $('.hero').hidden = mode !== 'agent';
   $('#scanView').hidden = mode !== 'scan';
+  $('#mcpView').hidden = mode !== 'mcp';
 }
 
 /* -------------------------------------------------------------------------- */
@@ -239,6 +226,8 @@ function setMode(mode) {
 /* -------------------------------------------------------------------------- */
 
 renderPresets();
+applyPreset(PRESETS[0], $('.preset'));
+fillMcpUrls();
 loadCapabilities();
 $('#briefForm').addEventListener('submit', runAnalysis);
 $('#stopBtn').addEventListener('click', () => state.session?.stop());

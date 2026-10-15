@@ -29,12 +29,6 @@ export const DOMAIN_LABELS = {
   'urn:entity:podcast': 'Podcast Media Buys',
 };
 
-export const TOOL_ENDPOINTS = {
-  resolve_entities: 'GET /search',
-  find_taste_tags: 'GET /v2/tags',
-  get_audience_affinities: 'GET /v2/insights',
-  stress_test_comps: 'GET /v2/insights ×N',
-};
 
 export function verdictClass(verdict) {
   if (!verdict) return '';

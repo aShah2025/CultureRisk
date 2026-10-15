@@ -72,3 +72,26 @@ test('scorecard with no evidence reports insufficient signal', () => {
   assert.equal(card.verdict, 'INSUFFICIENT SIGNAL');
   assert.equal(card.cultureRiskScore, null);
 });
+
+const { demographicSimilarity, demographicCoherence, demographicHeadline } = require('../netlify/lib/risk-model');
+
+test('demographic similarity: identical → 1, opposite → 0', () => {
+  const young = { age: { '24_and_younger': 0.6, '55_and_older': -0.5 }, gender: { male: 0.2 } };
+  const old = { age: { '24_and_younger': -0.6, '55_and_older': 0.5 }, gender: { male: -0.2 } };
+  assert.equal(demographicSimilarity(young, young), 1);
+  assert.equal(demographicSimilarity(young, old), 0);
+  assert.equal(demographicCoherence([young]), null);
+});
+
+test('demographic headline picks the peak age bucket and gender lean', () => {
+  const h = demographicHeadline({ age: { '25_to_29': 0.4, '45_to_54': -0.2 }, gender: { male: -0.2, female: 0.2 } });
+  assert.equal(h.peakAge, '25_to_29');
+  assert.equal(h.genderLean, 'female');
+});
+
+test('scorecard weights only the components that are present', () => {
+  const domains = { 'urn:entity:brand': [{ entityId: 'a', affinity: 0.8, popularity: 0.5 }] };
+  const card = scorecard({ domains, coherence: 0.2, conceptFit: 0.9, demographics: null });
+  assert.deepEqual(card.components.map((c) => c.key), ['alignment', 'coherence', 'conceptFit']);
+  assert.equal(Math.round(card.components.reduce((s, c) => s + c.weight, 0) * 100), 100);
+});
