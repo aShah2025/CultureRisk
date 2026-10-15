@@ -9,7 +9,7 @@
 export const PRESETS = [
   {
     id: 'cyberpunk',
-    name: 'Cyberpunk Neo-Noir Thriller',
+    name: 'Cyberpunk noir',
     title: 'NEO-OSAKA REQUIEM',
     anchors: ['Blade Runner 2049', 'Ghost in the Shell'],
     budgetMillions: 145,
@@ -21,7 +21,7 @@ export const PRESETS = [
   },
   {
     id: 'royal',
-    name: 'Royal Period Drama',
+    name: 'Royal period drama',
     title: 'THE REGENT\'S VOICE',
     anchors: ["The King's Speech", 'The Favourite'],
     budgetMillions: 28,
@@ -33,7 +33,7 @@ export const PRESETS = [
   },
   {
     id: 'survival',
-    name: 'Elevated Survival Adventure',
+    name: 'Survival epic',
     title: 'WHITEOUT',
     anchors: ['The Revenant', 'Everest'],
     budgetMillions: 95,
@@ -45,7 +45,7 @@ export const PRESETS = [
   },
   {
     id: 'hybrid',
-    name: 'Risky Hybrid: Musical × Horror',
+    name: 'Risky hybrid',
     title: 'SING FOR THE DEAD',
     anchors: ['La La Land', 'Hereditary'],
     budgetMillions: 40,

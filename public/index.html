@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  CultureRisk AI — Greenlight Intelligence.
+  CultureRisk — audience coverage for film, sourced from Qloo.
   Static shell; behaviour lives in /js (ES modules, no build step).
   Talks only to same-origin /api/* routes (Netlify Functions).
 -->
@@ -8,189 +8,153 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CultureRisk AI · Greenlight Intelligence</title>
-  <meta name="description" content="An autonomous research agent that interrogates Qloo's taste graph to stress-test comparable titles, find under-priced partners, and flag cultural risk before a film is greenlit." />
-  <meta name="theme-color" content="#090d16" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff7b72'/%3E%3Ctext x='16' y='22' font-family='Georgia' font-size='17' text-anchor='middle' fill='%23090d16'%3ECR%3C/text%3E%3C/svg%3E" />
+  <title>CultureRisk · Audience Coverage</title>
+  <meta name="description" content="Audience coverage for film executives. A research agent interrogates Qloo's taste graph to test the comps, the concept and the partners before a greenlight." />
+  <meta name="theme-color" content="#f3efe6" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%231b1915'/%3E%3Ctext x='16' y='23' font-family='Georgia' font-size='19' font-weight='bold' text-anchor='middle' fill='%23f3efe6'%3EC%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..800;1,6..72,300..800&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/app.css" />
   <script type="module" src="/js/main.js"></script>
 </head>
 
 <body>
-  <a class="skip" href="#workspace">Skip to analysis</a>
+  <a class="skip" href="#request">Skip to the coverage request</a>
 
-  <!-- ===================================================== Top bar -->
-  <header class="topbar">
-    <div class="wrap topbar-inner">
-      <a class="wordmark" href="/" aria-label="CultureRisk home">
-        <span class="mark" aria-hidden="true">CR</span>
-        <span>CultureRisk<em>AI</em></span>
-      </a>
-      <nav class="modes" aria-label="Mode">
-        <button type="button" class="mode is-active" data-mode="agent" aria-pressed="true">Greenlight analysis</button>
-        <button type="button" class="mode" data-mode="scan" aria-pressed="false">Quick scan</button>
-        <button type="button" class="mode" data-mode="mcp" aria-pressed="false">Use in your agent</button>
-      </nav>
-      <div class="status" aria-live="polite">
-        <span class="pill" id="qlooPill" title="Whether Qloo data is live or simulated"><span class="dot"></span><span>Qloo…</span></span>
+  <!-- ================================================================ Masthead -->
+  <header class="masthead">
+    <div class="wrap">
+      <div class="mast-top">
+        <span class="mast-date" id="mastDate"></span>
+        <nav class="mast-nav" aria-label="Sections">
+          <button type="button" class="nav-link is-active" data-mode="agent" aria-pressed="true">Coverage</button>
+          <button type="button" class="nav-link" data-mode="scan" aria-pressed="false">Quick read</button>
+          <button type="button" class="nav-link" data-mode="mcp" aria-pressed="false">For AI agents</button>
+        </nav>
+        <span class="data-status" id="dataStatus" aria-live="polite">Qloo data: checking…</span>
+      </div>
+      <a class="wordmark" href="/" aria-label="CultureRisk home">CultureRisk</a>
+      <div class="mast-sub">
+        <span>Audience coverage for film &amp; television</span>
+        <span class="mast-qloo">Every finding sourced from <strong>Qloo</strong>'s taste graph</span>
       </div>
     </div>
   </header>
 
   <main>
-    <!-- ===================================================== Hero -->
-    <section class="hero wrap" id="hero">
-      <p class="eyebrow">Greenlight intelligence · built on Qloo's taste graph</p>
-      <h1>Know the audience <em>before</em> you greenlight.</h1>
-      <p class="lede">
-        Studios commit tens of millions on an "<em>X</em> meets <em>Y</em>" pitch that nobody checks. CultureRisk's research agent does.
-        It interrogates 4 Qloo endpoints in 6 different ways, re-plans as the evidence comes in, and returns a greenlight memo in which
-        every number traces back to a Qloo call.
-      </p>
-      <div class="proof">
-        <div><strong>Comp stress test</strong><span>Do X's and Y's audiences actually love the same things?</span></div>
-        <div><strong>Concept fit</strong><span>Does the script's own audience match the comps it's sold on?</span></div>
-        <div><strong>White space</strong><span>Partners this audience loves before the market prices them in.</span></div>
-        <div><strong>Fully auditable</strong><span>No black box: every decision and Qloo call is logged.</span></div>
-      </div>
-    </section>
+    <!-- ============================================================ Coverage desk -->
+    <div id="agentView">
+      <section class="wrap intro">
+        <p class="lede">
+          <span class="dropcap">A</span> greenlight commits tens of millions on a sentence: <em>"it's X meets Y."</em>
+          Nobody checks whether X's audience and Y's audience are the same people, whether the script attracts them,
+          or which brands, artists and places they love. CultureRisk sends a research agent into Qloo's taste graph to find out,
+          then files coverage you can take into the room.
+        </p>
+      </section>
 
-    <!-- ===================================================== Workspace -->
-    <section id="workspace" class="wrap workspace">
-      <!-- ------------------------------- Brief -->
-      <aside class="brief panel" aria-labelledby="briefTitle">
-        <div class="panel-head">
-          <h2 id="briefTitle">Project brief</h2>
-          <span class="hint">Start from a case study</span>
+      <section class="wrap request" id="request" aria-labelledby="requestTitle">
+        <div class="section-head"><h2 id="requestTitle">Coverage request</h2><span class="rule"></span></div>
+
+        <div class="slate">
+          <span class="slate-label">From the slate</span>
+          <div class="slate-list" id="presets"></div>
         </div>
 
-        <div class="presets" id="presets" role="list"></div>
-
-        <form id="briefForm" novalidate>
-          <div class="field">
-            <label for="title">Working title</label>
-            <input id="title" name="title" type="text" maxlength="120" autocomplete="off" placeholder="e.g. NEO-OSAKA REQUIEM" />
-          </div>
-          <div class="field">
-            <label for="anchors">Comparable titles <small>1–3, comma separated</small></label>
-            <input id="anchors" name="anchors" type="text" maxlength="300" autocomplete="off" placeholder="Blade Runner 2049, Ghost in the Shell" required />
-          </div>
-          <div class="field">
-            <label for="budget">Budget <small>$M, optional</small></label>
-            <input id="budget" name="budget" type="number" min="1" max="999" inputmode="numeric" placeholder="145" />
-          </div>
-          <fieldset class="field">
-            <legend>Partner domains to map</legend>
-            <div class="checks" id="domainChecks">
-              <label><input type="checkbox" name="domains" value="urn:entity:brand" checked /> Brands</label>
-              <label><input type="checkbox" name="domains" value="urn:entity:artist" checked /> Music &amp; talent</label>
-              <label><input type="checkbox" name="domains" value="urn:entity:destination" checked /> Locations</label>
-              <label><input type="checkbox" name="domains" value="urn:entity:tv_show" /> TV adjacency</label>
-              <label><input type="checkbox" name="domains" value="urn:entity:podcast" /> Podcasts</label>
+        <form id="briefForm" class="form" novalidate>
+          <div class="form-grid">
+            <div class="field f-title">
+              <label for="title">Title</label>
+              <input id="title" type="text" maxlength="120" autocomplete="off" placeholder="Working title" />
             </div>
-          </fieldset>
-          <div class="field">
-            <label for="script">Logline &amp; treatment notes <small>themes become Qloo tag signals</small></label>
-            <textarea id="script" name="script" rows="7" maxlength="6000" placeholder="Logline, tone, release window, rating target…"></textarea>
-          </div>
-
-          <div class="actions">
-            <button type="submit" class="btn btn-primary" id="runBtn">Run greenlight analysis</button>
-            <button type="button" class="btn btn-ghost" id="stopBtn" hidden>Stop</button>
+            <div class="field f-comps">
+              <label for="anchors">Comparable titles <small>up to 3, comma separated</small></label>
+              <input id="anchors" type="text" maxlength="300" autocomplete="off" placeholder="La La Land, Hereditary" required />
+            </div>
+            <div class="field f-budget">
+              <label for="budget">Budget <small>$M</small></label>
+              <input id="budget" type="number" min="1" max="999" inputmode="numeric" placeholder="40" />
+            </div>
+            <div class="field f-logline">
+              <label for="script">Logline &amp; tone <small>its themes become Qloo tag signals</small></label>
+              <textarea id="script" rows="4" maxlength="6000" placeholder="One paragraph: premise, tone, rating, release window."></textarea>
+            </div>
+            <fieldset class="field f-domains">
+              <legend>Map these partner categories</legend>
+              <div class="checks" id="domainChecks">
+                <label><input type="checkbox" value="urn:entity:brand" checked /><span>Brands</span></label>
+                <label><input type="checkbox" value="urn:entity:artist" checked /><span>Music</span></label>
+                <label><input type="checkbox" value="urn:entity:destination" checked /><span>Locations</span></label>
+                <label><input type="checkbox" value="urn:entity:tv_show" /><span>TV</span></label>
+                <label><input type="checkbox" value="urn:entity:podcast" /><span>Podcasts</span></label>
+              </div>
+            </fieldset>
+            <div class="f-submit">
+              <button type="submit" class="btn btn-ink" id="runBtn">Request coverage</button>
+              <button type="button" class="btn btn-plain" id="stopBtn" hidden>Stop</button>
+            </div>
           </div>
           <p class="form-error" id="formError" role="alert" hidden></p>
         </form>
-      </aside>
-
-      <!-- ------------------------------- Report -->
-      <section class="report panel" aria-labelledby="reportTitle">
-        <div class="panel-head">
-          <h2 id="reportTitle">Report</h2>
-          <div class="report-tools" id="reportTools" hidden>
-            <button type="button" class="btn btn-small" id="copyMd">Copy memo</button>
-            <button type="button" class="btn btn-small" id="downloadJson">Download evidence</button>
-          </div>
-        </div>
-
-        <div class="tabs" role="tablist" aria-label="Report sections">
-          <button role="tab" class="tab is-active" id="tab-trace" aria-controls="view-trace" aria-selected="true">Research log</button>
-          <button role="tab" class="tab" id="tab-memo" aria-controls="view-memo" aria-selected="false" disabled>Memo</button>
-          <button role="tab" class="tab" id="tab-audience" aria-controls="view-audience" aria-selected="false" disabled>Audience</button>
-          <button role="tab" class="tab" id="tab-evidence" aria-controls="view-evidence" aria-selected="false" disabled>Evidence</button>
-        </div>
-
-        <div class="progress" id="progress" hidden><span id="progressBar"></span><em id="progressText"></em></div>
-
-        <div role="tabpanel" id="view-trace" aria-labelledby="tab-trace" class="view">
-          <div class="empty" id="traceEmpty">
-            <h3>Pick a case study to begin</h3>
-            <p>Choose one on the left, then press <strong>Run greenlight analysis</strong>. You'll watch the agent plan, query Qloo, observe the results and change course, step by step.</p>
-          </div>
-          <ol class="trace" id="trace" aria-live="polite"></ol>
-        </div>
-        <div role="tabpanel" id="view-memo" aria-labelledby="tab-memo" class="view" hidden><div id="memo"></div></div>
-        <div role="tabpanel" id="view-audience" aria-labelledby="tab-audience" class="view" hidden><div id="audience"></div></div>
-        <div role="tabpanel" id="view-evidence" aria-labelledby="tab-evidence" class="view" hidden><div id="evidence"></div></div>
       </section>
-    </section>
 
-    <!-- ===================================================== Quick scan -->
-    <section id="scanView" class="wrap page" hidden>
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Quick scan</h2>
-          <span class="hint">One title, one domain, two Qloo calls</span>
+      <!-- ---------------------------------------------------- Live desk -->
+      <section class="wrap desk" id="desk" hidden aria-labelledby="deskTitle">
+        <div class="section-head"><h2 id="deskTitle">On the desk</h2><span class="rule"></span><span class="desk-status" id="deskStatus"></span></div>
+        <div class="progress" aria-hidden="true"><span id="progressBar"></span></div>
+        <ol class="notes" id="notes" aria-live="polite"></ol>
+      </section>
+
+      <!-- ---------------------------------------------------- Coverage document -->
+      <article class="wrap coverage" id="coverage" hidden aria-label="Coverage report"></article>
+    </div>
+
+    <!-- ============================================================ Quick read -->
+    <section class="wrap page" id="scanView" hidden aria-labelledby="scanTitle">
+      <div class="section-head"><h2 id="scanTitle">Quick read</h2><span class="rule"></span></div>
+      <p class="page-lede">One film, one category, two Qloo calls. What does this film's audience over-index on?</p>
+      <form id="scanForm" class="form scan-form" novalidate>
+        <div class="field"><label for="scanAnchor">Film</label><input id="scanAnchor" type="text" maxlength="120" placeholder="Blade Runner 2049" required /></div>
+        <div class="field"><label for="scanDomain">Category</label>
+          <select id="scanDomain">
+            <option value="urn:entity:brand">Brands</option>
+            <option value="urn:entity:artist">Music</option>
+            <option value="urn:entity:destination">Locations</option>
+            <option value="urn:entity:tv_show">TV</option>
+            <option value="urn:entity:podcast">Podcasts</option>
+          </select>
         </div>
-        <form id="scanForm" class="scan-form" novalidate>
-          <div class="field">
-            <label for="scanAnchor">Film title</label>
-            <input id="scanAnchor" type="text" maxlength="120" placeholder="Blade Runner 2049" required />
-          </div>
-          <div class="field">
-            <label for="scanDomain">Domain</label>
-            <select id="scanDomain">
-              <option value="urn:entity:brand">Brands</option>
-              <option value="urn:entity:artist">Music &amp; talent</option>
-              <option value="urn:entity:destination">Locations</option>
-              <option value="urn:entity:tv_show">TV adjacency</option>
-              <option value="urn:entity:podcast">Podcasts</option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary" id="scanBtn">Scan</button>
-        </form>
-        <div id="scanResults" aria-live="polite"></div>
-      </div>
+        <button type="submit" class="btn btn-ink" id="scanBtn">Read</button>
+      </form>
+      <div id="scanResults" aria-live="polite"></div>
     </section>
 
-    <!-- ===================================================== MCP -->
-    <section id="mcpView" class="wrap page" hidden>
-      <div class="panel prose">
-        <div class="panel-head"><h2>Use CultureRisk inside your own agent</h2></div>
-        <p>CultureRisk is also an <strong>MCP server</strong>. Any MCP-capable agent, such as Claude, ChatGPT connectors or Cursor, can call it as a tool and get Qloo-grounded film intelligence in the middle of a conversation.</p>
-        <h3>Endpoint</h3>
-        <pre class="code" id="mcpUrl">https://&lt;this-site&gt;/api/mcp</pre>
-        <h3>Connect from Claude Code</h3>
-        <pre class="code" id="mcpCmd">claude mcp add --transport http culturerisk https://&lt;this-site&gt;/api/mcp</pre>
-        <h3>Tools</h3>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
-          <tbody>
-            <tr><td><code>greenlight_analysis</code></td><td>Runs the full autonomous research agent on a project and its comps. Returns the verdict, risk score, audience portrait, recommendations with Qloo IDs, risks and next steps.</td></tr>
-            <tr><td><code>audience_affinities</code></td><td>What the combined audience of one or more films over-indexes on in one Qloo domain, with white-space gaps.</td></tr>
-          </tbody>
-        </table></div>
-        <h3>Try it from a terminal</h3>
-        <pre class="code" id="mcpCurl">curl -s https://&lt;this-site&gt;/api/mcp -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</pre>
-      </div>
+    <!-- ============================================================ For AI agents -->
+    <section class="wrap page prose" id="mcpView" hidden aria-labelledby="mcpTitle">
+      <div class="section-head"><h2 id="mcpTitle">For AI agents</h2><span class="rule"></span></div>
+      <p class="page-lede">CultureRisk is also a Model Context Protocol server. Any MCP-capable agent, such as Claude, ChatGPT connectors or Cursor, can call it and get Qloo-sourced film-audience intelligence mid-conversation instead of guessing.</p>
+      <h3>Endpoint</h3>
+      <pre class="code" id="mcpUrl"></pre>
+      <h3>Connect from Claude Code</h3>
+      <pre class="code" id="mcpCmd"></pre>
+      <h3>Tools</h3>
+      <table class="ledger">
+        <thead><tr><th>Tool</th><th>Returns</th></tr></thead>
+        <tbody>
+          <tr><td><code>greenlight_analysis</code></td><td>Runs the full research agent on a project and its comps. Returns the verdict, risk score, audience portrait, comp and concept findings, partners with Qloo IDs, risks and next steps.</td></tr>
+          <tr><td><code>audience_affinities</code></td><td>What the combined audience of one or more films over-indexes on in one Qloo category, with white-space gaps.</td></tr>
+        </tbody>
+      </table>
+      <h3>Try it</h3>
+      <pre class="code" id="mcpCurl"></pre>
     </section>
   </main>
 
   <footer class="wrap footer">
-    <span>CultureRisk AI · MIT licensed · Built for the Qloo Agentic Hackathon</span>
-    <a href="https://github.com/aShah2025/CultureRisk" rel="noopener">Source on GitHub</a>
+    <span>CultureRisk · MIT licensed · Built for the Qloo Agentic Hackathon</span>
+    <span>Data: Qloo Taste AI</span>
+    <a href="https://github.com/aShah2025/CultureRisk" rel="noopener">Source</a>
   </footer>
 </body>
 </html>

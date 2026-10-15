@@ -64,6 +64,7 @@ function normalizeEntity(raw) {
     : [];
   const year = raw?.properties?.release_year ?? raw?.properties?.year ?? null;
   const growth = raw?.query?.measurements?.audience_growth;
+  const image = raw?.properties?.image?.url;
   return {
     entityId: raw?.entity_id || raw?.id || null,
     name: raw?.name || 'Unnamed entity',
@@ -74,6 +75,7 @@ function normalizeEntity(raw) {
     popularity: unitScore(raw?.popularity),
     audienceGrowth: typeof growth === 'number' ? Math.round(growth * 1000) / 1000 : null,
     explainability: parseExplainability(raw?.query?.explainability),
+    image: typeof image === 'string' && /^https:\/\//.test(image) ? image : null,
     tags,
   };
 }

@@ -40,7 +40,7 @@ test('insights sends documented query params and X-Api-Key header', async () => 
   assert.equal(url.searchParams.get('signal.interests.entities'), 'A,B');
   assert.equal(url.searchParams.get('signal.interests.tags'), 'T');
   assert.equal(headers['X-Api-Key'], 'k-123');
-  assert.deepEqual(out[0], { entityId: 'E1', name: 'Porsche', type: null, year: null, disambiguation: null, affinity: 0.8, popularity: 0.9, audienceGrowth: null, explainability: null, tags: ['Luxury'] });
+  assert.deepEqual(out[0], { entityId: 'E1', name: 'Porsche', type: null, year: null, disambiguation: null, affinity: 0.8, popularity: 0.9, audienceGrowth: null, explainability: null, image: null, tags: ['Luxury'] });
 });
 
 test('insights throws QlooError on empty results and HTTP errors', async () => {
@@ -129,4 +129,16 @@ test('insights requests explainability and popularity ceilings when asked, and p
   assert.equal(seen[0].url.searchParams.get('filter.popularity.max'), '0.6');
   assert.deepEqual(out[0].explainability, { A: 0.7, B: 0.3 });
   assert.equal(out[0].audienceGrowth, 0.05);
+});
+
+test('entity images are taken from properties.image.url and must be https', async () => {
+  const { impl } = fakeFetch({
+    '/v2/insights': { body: { results: { entities: [
+      { entity_id: 'A', name: 'A', properties: { image: { url: 'https://images.qloo.com/i/A.jpg' } } },
+      { entity_id: 'B', name: 'B', properties: { image: { url: 'javascript:alert(1)' } } },
+    ] } } },
+  });
+  const out = await createQlooClient(cfg(impl)).insights({ filterType: 'urn:entity:brand', entityIds: ['x'] });
+  assert.equal(out[0].image, 'https://images.qloo.com/i/A.jpg');
+  assert.equal(out[1].image, null);
 });

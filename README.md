@@ -53,7 +53,23 @@ resolve comps → map script themes to tags → taste DNA → demographics → c
 | Several titles share a comp's name | **Disambiguates** by exact match and popularity, and flags inexact matches |
 | No comp resolves | **Stops** and reports, rather than guessing |
 
-The **Research log** shows every step live: what the agent set out to do and why, each Qloo call with its exact parameters and provenance, what it *observed*, and what it *decided*. Steps it re-planned are marked.
+While it works, the **On the desk** panel shows every step live in screenplay type: what the agent set out to do and why, each Qloo call with its exact parameters and provenance, what it *observed*, and what it *decided*. Steps it re-planned are marked.
+
+### The output: audience coverage
+
+Studio executives already read **script coverage**, the short, blunt document that ends in *Pass / Consider / Recommend*. CultureRisk files **audience coverage** in the same format:
+
+- **The stamp:** Recommend, Consider, Rework or Pass, with a 0–100 culture-risk score and the formula behind it.
+- **I. The comps:** posters, a taste-overlap diagram, Qloo demographics per comp, and what each comp's fans also watch.
+- **II. The audience:** a portrait, the taste DNA, and the films they over-index on.
+- **III. The concept:** whether the script's own themes attract the same people, plus bridge titles.
+- **IV. Partners:** brands, music, locations, TV and podcasts, each citing its Qloo ID, affinity vs popularity, and which comp drives it.
+- **V. Without Qloo:** the famous names this audience shrugs at.
+- **VI. Moodboard:** Qloo entity images of this audience's world, for production design and music supervision.
+- **VII. Risks and next steps.**
+- **Appendices:** the agent's full notes and a ledger of every Qloo call.
+
+Every chart carries a source line naming the Qloo endpoint and parameters it came from. The document prints cleanly to PDF.
 
 **Why no LLM?** Studios need to defend a greenlight in front of a board. A deterministic agent gives the same answer for the same evidence, can't hallucinate an entity, and every claim is traceable to a Qloo call. The memo is generated from the evidence ledger, and the server verifies every recommended entity ID against what Qloo returned in the session.
 
@@ -85,15 +101,15 @@ claude mcp add --transport http culturerisk https://<your-site>.netlify.app/api/
 
 ## For judges: try it in 60 seconds
 
-1. Open the live demo. The pill in the top-right shows whether Qloo data is **live**.
-2. Pick a case study (the first is preloaded):
+1. Open the live demo. The masthead shows whether Qloo data is **live**.
+2. Pick a case study from **the slate** (the risky hybrid is preloaded):
    - **Cyberpunk Neo-Noir:** *Blade Runner 2049* × *Ghost in the Shell*
    - **Royal Period Drama:** *The King's Speech* × *The Favourite*
    - **Elevated Survival:** *The Revenant* × *Everest*
    - **Risky Hybrid: Musical × Horror:** *La La Land* × *Hereditary*. Watch the agent detect the split and go looking for a bridge title.
-3. Press **Run greenlight analysis** and watch the **Research log**.
-4. Read the **Memo**, then the **Audience** tab (demographics, taste DNA, what each comp's fans watch) and **Evidence** (every Qloo call with its parameters).
-5. Try your own project, or open **Use in your agent** to connect it to Claude, Cursor or another MCP client.
+3. Press **Request coverage** and watch the agent work **on the desk**.
+4. Read the coverage: the stamp, the comps face-off, the audience, the partners, *Without Qloo*, and the moodboard. Open *Appendix B* to see every Qloo call.
+5. Try your own project, or open **For AI agents** to connect CultureRisk to Claude, Cursor or another MCP client.
 
 ## Architecture
 
@@ -115,7 +131,7 @@ netlify/lib/
     ledger.js                   Evidence ledger (the agent's working memory)
     synthesis.js                Memo generation + grounding check
     brief.js / tools.js         Brief validation · MCP tool definitions
-tests/                          node:test suite (41 tests)
+tests/                          node:test suite (42 tests)
 scripts/dev-server.js           Zero-dependency local server
 ```
 

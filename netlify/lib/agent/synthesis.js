@@ -59,6 +59,7 @@ function buildRecommendations(ledger) {
         domain: urn,
         name: e.name,
         entityId: e.entityId,
+        image: e.image ?? null,
         whiteSpace: ws,
         action: (ACTIONS[urn] || ((n) => `Engage ${n}.`))(e.name, ws),
         evidence: `Affinity ${pct(e.affinity)} vs popularity ${pct(e.popularity)}${ws ? ` (+${Math.round((e.affinity - e.popularity) * 100)} pts white space)` : ''}${driver ? ` · ${driver}` : ''}.`,
@@ -68,7 +69,7 @@ function buildRecommendations(ledger) {
     const trap = [...d.entities]
       .filter((e) => typeof e.popularity === 'number' && typeof e.affinity === 'number' && e.popularity - e.affinity >= 0.12)
       .sort((a, b) => (b.popularity - b.affinity) - (a.popularity - a.affinity))[0];
-    if (trap) traps.push({ domain: urn, name: trap.name, entityId: trap.entityId, popularity: trap.popularity, affinity: trap.affinity });
+    if (trap) traps.push({ domain: urn, name: trap.name, entityId: trap.entityId, image: trap.image ?? null, popularity: trap.popularity, affinity: trap.affinity });
   }
   return { recs, traps };
 }
@@ -196,6 +197,7 @@ function finalizeSession(brief, ledger) {
       demographics: ledger.demographics,
       compare: ledger.compare,
       compLists: ledger.compLists ? ledger.compLists.map((l) => ({ anchor: l.anchor, top: l.top.slice(0, 6).map((e) => e.name) })) : null,
+      blendedFilms: (ledger.blendedFilms || []).slice(0, 6),
       coherence: ledger.coherence,
       conceptFit: ledger.conceptFit,
       bridges: ledger.bridges,

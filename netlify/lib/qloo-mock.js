@@ -170,6 +170,7 @@ function rankLibrary(filterType, seed, { take, popularityMax = null }) {
       popularity: round3(clamp(popularity + jitter(`${seed}|p|${name}`, 0.03), 0.3, 0.99)),
       audienceGrowth: round3(jitter(`${seed}|g|${name}`, 0.08)),
       explainability: null,
+      image: null,
       tags,
     }))
     .filter((e) => popularityMax === null || e.popularity <= popularityMax)
@@ -192,6 +193,7 @@ function createMockQlooClient() {
         popularity: round3(0.55 + ((hashString(`${base}|pop`) % 400) / 1000)),
         audienceGrowth: null,
         explainability: null,
+        image: null,
         tags: [],
       };
       return [primary].slice(0, take);

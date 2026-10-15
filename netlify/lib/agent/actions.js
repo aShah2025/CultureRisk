@@ -33,7 +33,7 @@ const THRESHOLDS = Object.freeze({
 const MOVIE = 'urn:entity:movie';
 const pct = (v) => (typeof v === 'number' ? `${Math.round(v * 100)}%` : 'n/a');
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-const slim = (e) => ({ entityId: e.entityId, name: e.name, affinity: e.affinity, popularity: e.popularity, audienceGrowth: e.audienceGrowth ?? null, explainability: e.explainability ?? null, tags: e.tags || [] });
+const slim = (e) => ({ entityId: e.entityId, name: e.name, affinity: e.affinity, popularity: e.popularity, audienceGrowth: e.audienceGrowth ?? null, explainability: e.explainability ?? null, image: e.image ?? null, tags: e.tags || [] });
 const compIds = (ledger) => ledger.comps.map((c) => c.entityId);
 const conceptTagIds = (ledger, n = 2) => ledger.conceptTags.slice(0, n).map((t) => t.tagId);
 const AGE_LABEL = {
@@ -60,7 +60,7 @@ async function resolveComps({ brief, ledger, qloo }) {
     const pick = exact[0] || data[0];
     ledger.comps.push({
       query, entityId: pick.entityId, name: pick.name, year: pick.year, disambiguation: pick.disambiguation,
-      popularity: pick.popularity, provenance, exactMatch: Boolean(exact[0]),
+      popularity: pick.popularity, image: pick.image ?? null, provenance, exactMatch: Boolean(exact[0]),
     });
     observations.push(`"${query}" → ${pick.name}${pick.year ? ` (${pick.year})` : ''}, popularity ${pct(pick.popularity)}`);
     if (exact.length > 1) decisions.push(`Several titles are named "${query}". Using the most popular release.`);
