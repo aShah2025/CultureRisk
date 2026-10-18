@@ -42,7 +42,7 @@ function qlooConfig() {
   return {
     apiKey: isPlaceholderKey(apiKey) ? null : apiKey.trim(),
     baseUrl: (process.env.QLOO_API_BASE || 'https://hackathon.api.qloo.com').replace(/\/+$/, ''),
-    timeoutMs: Number(process.env.QLOO_TIMEOUT_MS) || 7000,
+    timeoutMs: Number(process.env.QLOO_TIMEOUT_MS) || 12000,
   };
 }
 

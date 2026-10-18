@@ -46,6 +46,7 @@ exports.handler = async (event) => {
   const qloo = createQlooService();
   const search = await qloo.search(anchor, 'urn:entity:movie', 1);
   const anchorEntity = search.data[0];
+  if (!anchorEntity) return json(404, { error: 'not_found', message: `Qloo has no film matching "${anchor}". Try another title.` });
   const insights = await qloo.insights({ filterType: targetDomain, entityIds: [anchorEntity.entityId], tagIds: [], take: RESULT_LIMIT });
 
   const live = insights.provenance === 'live';

@@ -103,30 +103,49 @@ function normalizeDemographics(raw) {
  * Create a live client.
  * @param {{apiKey: string, baseUrl: string, timeoutMs: number, fetchImpl?: typeof fetch}} opts
  */
-function createQlooClient({ apiKey, baseUrl, timeoutMs, fetchImpl = globalThis.fetch }) {
+function createQlooClient({ apiKey, baseUrl, timeoutMs, fetchImpl = globalThis.fetch, sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
   if (!apiKey) throw new QlooError('no_api_key', 'Qloo API key is not configured.');
 
   async function get(path, params) {
     const url = `${baseUrl}${path}?${params.toString()}`;
     const controller = new AbortController();
+    const deadline = Date.now() + timeoutMs;
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    let res;
     try {
-      res = await fetchImpl(url, {
-        method: 'GET',
-        headers: { 'X-Api-Key': apiKey, Accept: 'application/json' },
-        signal: controller.signal,
-      });
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const res = await fetchImpl(url, {
+          method: 'GET',
+          headers: { 'X-Api-Key': apiKey, Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        // Retry a brief throttle or service interruption once, within the same
+        // total deadline. Longer Retry-After values fall back without hammering Qloo.
+        if (attempt === 0 && (res.status === 429 || res.status === 503)) {
+          const retryAfter = res.headers?.get('retry-after');
+          const seconds = retryAfter == null ? NaN : Number(retryAfter);
+          const date = retryAfter == null ? NaN : Date.parse(retryAfter);
+          const delay = Number.isFinite(seconds) ? Math.max(0, seconds * 1000)
+            : Number.isFinite(date) ? Math.max(0, date - Date.now()) : 1000;
+          if (delay <= 2000 && Date.now() + delay < deadline) {
+            await res.body?.cancel();
+            await sleepImpl(delay);
+            if (controller.signal.aborted) throw new QlooError('upstream_timeout');
+            continue;
+          }
+        }
+        if (!res.ok) throw new QlooError(`http_${res.status}`, `Qloo ${path} returned ${res.status}`);
+        try {
+          return await res.json();
+        } catch (err) {
+          if (controller.signal.aborted || err?.name === 'AbortError') throw new QlooError('upstream_timeout');
+          throw new QlooError('bad_json', `Qloo ${path} returned non-JSON`);
+        }
+      }
     } catch (err) {
-      throw new QlooError(err?.name === 'AbortError' ? 'upstream_timeout' : 'upstream_network', err?.message);
+      if (err instanceof QlooError) throw err;
+      throw new QlooError(controller.signal.aborted || err?.name === 'AbortError' ? 'upstream_timeout' : 'upstream_network', err?.message);
     } finally {
       clearTimeout(timer);
-    }
-    if (!res.ok) throw new QlooError(`http_${res.status}`, `Qloo ${path} returned ${res.status}`);
-    try {
-      return await res.json();
-    } catch {
-      throw new QlooError('bad_json', `Qloo ${path} returned non-JSON`);
     }
   }
 
@@ -147,7 +166,14 @@ function createQlooClient({ apiKey, baseUrl, timeoutMs, fetchImpl = globalThis.f
     /** Resolve free text to entities of one type. */
     async search(query, type, take = 3) {
       const params = new URLSearchParams({ query, types: type, take: String(take) });
-      const data = await get('/search', params);
+      let data;
+      try {
+        data = await get('/search', params);
+      } catch (err) {
+        // Qloo documents 404 as a valid "No results" search response.
+        if (err.code === 'http_404') return [];
+        throw err;
+      }
       const results = Array.isArray(data?.results) ? data.results : [];
       return results.slice(0, take).map(normalizeEntity);
     },

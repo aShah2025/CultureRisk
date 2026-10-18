@@ -13,6 +13,19 @@
 
 const MAX_CALLS = 80;
 
+/** Derive report provenance from every recorded call, rather than key configuration. */
+function summarizeCalls(calls = []) {
+  const summary = { mode: 'simulated', total: calls.length, live: 0, fallback: 0, simulated: 0 };
+  for (const call of calls) {
+    if (call?.provenance === 'live') summary.live += 1;
+    else if (call?.provenance === 'fallback') summary.fallback += 1;
+    else summary.simulated += 1;
+  }
+  if (summary.live > 0) summary.mode = summary.live === summary.total ? 'live' : 'mixed';
+  else if (summary.fallback > 0) summary.mode = 'fallback';
+  return summary;
+}
+
 function createLedger() {
   return {
     comps: [], // [{query, entityId, name, year, disambiguation, popularity, provenance, exactMatch}]
@@ -59,7 +72,7 @@ function hydrateLedger(raw) {
     actions: arr(raw.actions, 40).map(String),
     flags: obj(raw.flags) || {},
     calls: arr(raw.calls, MAX_CALLS),
-    liveData: raw.liveData === true,
+    liveData: summarizeCalls(arr(raw.calls, MAX_CALLS)).live > 0,
   };
 }
 
@@ -72,4 +85,4 @@ function recordCalls(ledger, calls) {
   if (ledger.calls.length > MAX_CALLS) ledger.calls = ledger.calls.slice(-MAX_CALLS);
 }
 
-module.exports = { createLedger, hydrateLedger, recordCalls };
+module.exports = { createLedger, hydrateLedger, recordCalls, summarizeCalls };

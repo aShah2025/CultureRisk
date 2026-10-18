@@ -23,7 +23,7 @@ async function loadCapabilities() {
   try {
     const caps = await getCapabilities();
     const live = caps.qlooMode === 'live';
-    el.textContent = live ? 'Qloo data: live' : 'Qloo data: simulated';
+    el.textContent = live ? 'Qloo: live key configured' : 'Qloo data: simulated';
     el.className = `data-status ${live ? 'live' : 'sim'}`;
   } catch {
     el.textContent = 'Qloo data: offline';

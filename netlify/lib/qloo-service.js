@@ -98,8 +98,8 @@ function createQlooService(opts = {}) {
     },
 
     tasteTags(q) {
-      const params = { 'filter.type': 'urn:tag', 'signal.interests.entities': q.entityIds || [], take: q.take };
-      return run('GET /v2/insights', params, (c) => c.tasteTags(q), q.entityIds || []);
+      const params = { 'filter.type': 'urn:tag', 'signal.interests.entities': q.entityIds || [], 'signal.interests.tags': q.tagIds || [], take: q.take };
+      return run('GET /v2/insights', params, (c) => c.tasteTags(q), [...(q.entityIds || []), ...(q.tagIds || [])]);
     },
 
     compare(q) {

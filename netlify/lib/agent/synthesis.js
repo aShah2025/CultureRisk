@@ -11,6 +11,7 @@
 const { DOMAINS } = require('../config');
 const { scorecard, whiteSpace, domainProfile } = require('../risk-model');
 const { AGE_LABEL } = require('./actions');
+const { summarizeCalls } = require('./ledger');
 
 const pct = (v) => (typeof v === 'number' ? `${Math.round(v * 100)}%` : 'n/a');
 const list = (xs) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
@@ -22,7 +23,8 @@ function ledgerScorecard(ledger) {
     coherence: ledger.coherence ? ledger.coherence.value : null,
     conceptFit: ledger.conceptFit ? ledger.conceptFit.value : null,
     demographics: ledger.demographics ? ledger.demographics.coherence : null,
-    liveData: ledger.liveData,
+    // The scorecard may award high confidence only to wholly live evidence.
+    liveData: summarizeCalls(ledger.calls).mode === 'live',
   });
 }
 
@@ -76,6 +78,18 @@ function buildRecommendations(ledger) {
 
 function buildRisks(ledger, card) {
   const risks = [];
+  const source = summarizeCalls(ledger.calls);
+  if (source.mode === 'mixed' || source.mode === 'fallback') {
+    risks.push({
+      severity: 'high',
+      risk: source.mode === 'mixed'
+        ? `Mixed evidence: ${source.live} live Qloo calls, ${source.fallback} simulated fallback calls and ${source.simulated} simulated calls. The verdict includes simulated taste signals.`
+        : `Live Qloo requests failed: ${source.fallback} of ${source.total} calls used simulated fallback. This verdict is not supported by live taste signals.`,
+      mitigation: 'Resolve the failed Qloo requests and re-run for fully live evidence before any committee decision.',
+    });
+  } else if (source.mode === 'simulated') {
+    risks.push({ severity: 'high', risk: 'This analysis ran on simulated Qloo data, not live taste signals.', mitigation: 'Configure QLOO_HACKATHON_API_KEY and re-run before any committee decision.' });
+  }
   const coh = ledger.coherence?.value;
   if (typeof coh === 'number' && coh < 0.35) {
     risks.push({ severity: 'high', risk: `The comps attract different audiences (taste overlap ${pct(coh)}). The "X meets Y" pitch may describe an audience that does not exist.`, mitigation: ledger.bridges?.[0] ? `Reposition around ${ledger.bridges[0].name}, whose audience spans both comps.` : 'Pick one primary comp and test the logline against each comp audience separately.' });
@@ -97,9 +111,6 @@ function buildRisks(ledger, card) {
   }
   if (ledger.droppedComps.length) {
     risks.push({ severity: 'low', risk: `Qloo could not resolve: ${list(ledger.droppedComps)}.`, mitigation: 'Check the spelling or substitute a comparable title Qloo recognises.' });
-  }
-  if (!ledger.liveData) {
-    risks.push({ severity: 'high', risk: 'This analysis ran on simulated Qloo data, not live taste signals.', mitigation: 'Configure QLOO_HACKATHON_API_KEY and re-run before any committee decision.' });
   }
   if (!risks.length) {
     risks.push({ severity: 'low', risk: 'No structural taste risks detected. Remaining risk is execution: cast, cut, and release window.', mitigation: 'Proceed to packaging. Re-run after casting announcements.' });
@@ -123,6 +134,7 @@ function headlineFor(card, ledger) {
 
 function composeMemo(brief, ledger) {
   const card = ledgerScorecard(ledger);
+  const source = summarizeCalls(ledger.calls);
   const { recs, traps } = buildRecommendations(ledger);
   const comps = ledger.comps.map((c) => c.name);
   const demo = ledger.demographics?.byComp || [];
@@ -145,6 +157,7 @@ function composeMemo(brief, ledger) {
 
   const topRec = recs.find((r) => r.whiteSpace) || recs[0];
   const summary = [
+    source.mode !== 'live' ? `Data: ${source.mode}; ${source.live}/${source.total} calls returned live Qloo evidence.` : '',
     `${brief.title} scores ${card.cultureRiskScore ?? 'n/a'}/100 on culture risk (${card.verdict.toLowerCase()}, ${card.confidence} confidence) against the ${list(comps)} audience.`,
     ledger.coherence ? `The comps ${ledger.coherence.value >= 0.55 ? 'share a genuine audience' : ledger.coherence.value >= 0.35 ? 'overlap only partially' : 'pull in different directions'}.` : '',
     ledger.conceptFit ? `The concept ${ledger.flags.conceptDrift ? 'drifts away from' : 'fits'} that audience.` : '',
@@ -164,7 +177,8 @@ function composeMemo(brief, ledger) {
     memo: {
       verdict: card.verdict,
       confidence: card.confidence,
-      headline: headlineFor(card, ledger),
+      headline: source.mode === 'live' ? headlineFor(card, ledger)
+        : `${source.mode === 'mixed' ? 'Mixed live and simulated evidence' : source.mode === 'fallback' ? 'Simulated fallback evidence' : 'Simulated evidence'}: provisional coverage; re-run with fully live data before acting.`,
       executiveSummary: summary,
       audiencePortrait: portrait || 'Insufficient Qloo signal to characterise the audience.',
       compFinding,
@@ -180,15 +194,26 @@ function composeMemo(brief, ledger) {
 /** Final payload for the cockpit. */
 function finalizeSession(brief, ledger) {
   const { card, memo } = composeMemo(brief, ledger);
+  const dataProvenance = summarizeCalls(ledger.calls);
   const known = new Set([
     ...ledger.comps.map((c) => c.entityId),
     ...Object.values(ledger.domains).flatMap((d) => [...d.entities, ...(d.probe || [])].map((e) => e.entityId)),
   ]);
-  memo.recommendations = memo.recommendations.map((r) => ({ ...r, grounded: known.has(r.entityId) }));
+  memo.recommendations = memo.recommendations.map((r) => ({
+    ...r,
+    grounded: known.has(r.entityId),
+    simulated: String(r.entityId).startsWith('mock:'),
+    qlooVerified: known.has(r.entityId) && !String(r.entityId).startsWith('mock:') && dataProvenance.live > 0,
+  }));
   return {
     memo,
     scorecard: card,
-    grounding: { total: memo.recommendations.length, grounded: memo.recommendations.filter((r) => r.grounded).length },
+    grounding: {
+      total: memo.recommendations.length,
+      grounded: memo.recommendations.filter((r) => r.grounded).length,
+      qlooVerified: memo.recommendations.filter((r) => r.qlooVerified).length,
+      simulated: memo.recommendations.filter((r) => r.simulated).length,
+    },
     evidence: {
       comps: ledger.comps,
       droppedComps: ledger.droppedComps,
@@ -203,7 +228,8 @@ function finalizeSession(brief, ledger) {
       bridges: ledger.bridges,
       domains: Object.fromEntries(Object.entries(ledger.domains).map(([urn, d]) => [urn, { entities: d.entities.slice(0, 8), probe: d.probe, drivers: d.drivers, retried: d.retried, profile: domainProfile(d.entities) }])),
       calls: ledger.calls,
-      liveData: ledger.liveData,
+      dataProvenance,
+      liveData: dataProvenance.live > 0,
     },
   };
 }

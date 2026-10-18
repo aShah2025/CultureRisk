@@ -131,12 +131,12 @@ netlify/lib/
     ledger.js                   Evidence ledger (the agent's working memory)
     synthesis.js                Memo generation + grounding check
     brief.js / tools.js         Brief validation · MCP tool definitions
-tests/                          node:test suite (42 tests)
+tests/                          node:test suite (61 tests)
 scripts/dev-server.js           Zero-dependency local server
 ```
 
 - **Stepwise execution.** Netlify functions are capped at 30 s, so each `POST /api/agent` runs one action and returns the ledger for the browser to echo back. That allows unlimited depth with no session database, and the trace streams live.
-- **Resilience.** No key means deterministic simulated data, labelled *simulated* everywhere. If a single live call fails, it falls back for that call only and is labelled *fallback* with the error code. The UI never shows a blank screen.
+- **Resilience.** No key means deterministic simulated data, labelled *simulated* everywhere. Live calls have a 12 s total deadline, including the response body, and retry a brief 429/503 interruption once within that deadline. Failed calls are labelled *fallback* with the error code; reports using both live and simulated evidence are labelled *mixed* and cannot receive high confidence. A search with no matches stays empty instead of inventing a simulated comparable title.
 - **Zero runtime dependencies.** The stack is plain Node 20 and browser ES modules.
 - **Security.** The Qloo key stays server-side. Endpoints validate all input and cap request size. The site sends a strict CSP and escapes all rendered values. No Qloo response data is stored in the repo.
 

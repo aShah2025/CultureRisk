@@ -182,7 +182,7 @@ const WEIGHTS = Object.freeze({ alignment: 0.4, coherence: 0.25, conceptFit: 0.2
  * @param {number|null} [input.coherence]            0–1 comp taste coherence.
  * @param {number|null} [input.conceptFit]           0–1 concept-to-comp audience fit.
  * @param {number|null} [input.demographics]         0–1 comp demographic coherence.
- * @param {boolean} [input.liveData]                 Whether any evidence came from live Qloo.
+ * @param {boolean} [input.liveData]                 Whether the scoring evidence is fully live Qloo data.
  */
 function scorecard({ domains, coherence = null, conceptFit = null, demographics = null, liveData = false }) {
   const profiles = Object.fromEntries(Object.entries(domains || {}).map(([urn, ents]) => [urn, domainProfile(ents)]));

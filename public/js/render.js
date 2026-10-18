@@ -15,6 +15,26 @@ const CARD_COLORS = ['#7a2a24', '#2c4a6e', '#4d5a2a', '#8a5a14', '#3b3446', '#1f
 
 const n = (v) => (v === null || v === undefined ? 'n/a' : v);
 
+function dataSource(data) {
+  if (data.dataProvenance) return data.dataProvenance;
+  const calls = data.calls || [];
+  const source = { mode: 'simulated', total: calls.length, live: 0, fallback: 0, simulated: 0 };
+  for (const call of calls) {
+    if (call.provenance === 'live') source.live += 1;
+    else if (call.provenance === 'fallback') source.fallback += 1;
+    else source.simulated += 1;
+  }
+  if (source.live) source.mode = source.live === source.total ? 'live' : 'mixed';
+  else if (source.fallback) source.mode = 'fallback';
+  return source;
+}
+
+const sourceLabel = (source) => ({ live: 'live', mixed: 'mixed live / simulated', fallback: 'simulated fallback', simulated: 'simulated' }[source.mode] || 'simulated');
+const sourceCounts = (source) => `${source.live} live · ${source.fallback} fallback · ${source.simulated} simulated`;
+const sourceClass = (source) => source.mode === 'mixed' ? 'fallback' : source.mode;
+const isSimulated = (entity) => entity.simulated || String(entity.entityId).startsWith('mock:');
+const entityIdLabel = (entity) => isSimulated(entity) ? 'Simulated ID' : entity.qlooVerified ? 'Qloo ID ✓' : entity.grounded ? 'Session ID' : 'Unverified ID';
+
 function hash(str) {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
@@ -108,7 +128,7 @@ function partnerCard(r) {
     <div class="p-name">${esc(r.name)}</div>
     <p class="p-action">${esc(r.action)}</p>
     <p class="p-ev">${esc(r.evidence)}</p>
-    <div class="p-id" title="${r.grounded ? 'Returned by Qloo in this session' : 'Not found in this session'}">${r.grounded ? 'Qloo ID ✓ ' : 'Unverified '}${esc(r.entityId)}</div>
+    <div class="p-id" title="${isSimulated(r) ? 'Simulated entity; not a live Qloo ID' : r.qlooVerified ? 'Returned by live Qloo in this session' : r.grounded ? 'Found in this session\'s evidence' : 'Not found in this session'}">${entityIdLabel(r)} ${esc(r.entityId)}</div>
   </article>`;
 }
 
@@ -138,7 +158,7 @@ const COMPONENT_LABEL = { alignment: 'alignment', coherence: 'comp overlap', con
 export function renderCoverage(result, brief, coverageNo) {
   const { memo, scorecard: card, evidence, grounding } = result;
   const comps = evidence.comps;
-  const live = evidence.liveData;
+  const source = dataSource(evidence);
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const verdictWord = { GREENLIGHT: 'Recommend', 'CONDITIONAL GREENLIGHT': 'Consider', REWORK: 'Rework', PASS: 'Pass' }[memo.verdict] || memo.verdict;
   const sec = (num, label, title, body) => `<section class="doc-sec"><h3><span class="num">${num}</span>${esc(label)}</h3><h4 class="sec-title">${title}</h4>${body}</section>`;
@@ -181,7 +201,7 @@ export function renderCoverage(result, brief, coverageNo) {
   const mood = moodItems(evidence);
   const moodBody = mood.length ? `<p>The world this audience lives in, for production design, wardrobe, locations and music supervision.</p>
     <div class="moodboard">${mood.map((m) => `<figure class="mood">${frame(m, SHORT_DOMAIN[m.urn], 'fill')}${m.image ? `<figcaption>${esc(m.name)}</figcaption>` : ''}</figure>`).join('')}</div>
-    <p class="source">Qloo entity images and affinities${live ? '' : ' (title cards shown: simulated data has no images)'}</p>` : '';
+    <p class="source">Entity images where available; title cards for missing images. Data: ${esc(sourceLabel(source))}.</p>` : '';
 
   /* VII. Risks & next steps */
   const risksBody = `<div class="table-wrap"><table class="ledger"><thead><tr><th>Severity</th><th>Risk</th><th>Mitigation</th></tr></thead><tbody>
@@ -208,10 +228,12 @@ export function renderCoverage(result, brief, coverageNo) {
         <div><dt>Comparables</dt><dd>${esc(comps.map((c) => c.name).join(' × ') || brief.anchors.join(' × '))}</dd></div>
         <div><dt>Budget</dt><dd>${brief.budgetMillions ? `$${esc(brief.budgetMillions)}M` : 'n/a'}</dd></div>
         <div><dt>Date</dt><dd>${esc(date)}</dd></div>
-        <div><dt>Data</dt><dd>Qloo Taste AI · <span class="prov prov-${live ? 'live' : 'simulated'}">${live ? 'live' : 'simulated'}</span></dd></div>
-        <div><dt>Evidence</dt><dd>${esc(evidence.calls.length)} Qloo calls · ${esc(grounding.grounded)}/${esc(grounding.total)} IDs verified</dd></div>
+        <div><dt>Data</dt><dd>Qloo Taste AI · <span class="prov prov-${sourceClass(source)}">${esc(sourceLabel(source))}</span><br>${esc(sourceCounts(source))}</dd></div>
+        <div><dt>Evidence</dt><dd>${esc(evidence.calls.length)} calls · ${esc(grounding.grounded)}/${esc(grounding.total)} IDs traced to session · ${esc(grounding.qlooVerified ?? 0)} live Qloo IDs</dd></div>
         <div><dt>Analyst</dt><dd>CultureRisk research agent</dd></div>
       </dl>
+
+      ${source.mode !== 'live' ? `<p class="form-error" role="note"><strong>${source.mode === 'mixed' ? 'Mixed data' : source.mode === 'fallback' ? 'Qloo fallback' : 'Simulated data'}:</strong> ${esc(sourceCounts(source))}. This coverage includes simulated signals. Re-run for fully live evidence before acting.</p>` : ''}
 
       <div class="verdict-block">
         <div class="score"><div class="score-n">${esc(n(card.cultureRiskScore))}<small>/100</small></div><div class="score-l">Culture risk</div></div>
@@ -250,9 +272,10 @@ export function renderCoverage(result, brief, coverageNo) {
 
 export function renderQuickScan(data) {
   const s = data.summary || {};
+  const source = dataSource(data);
   const ws = new Set((data.whiteSpace || []).map((w) => w.entityId));
   return `<div class="scan-head"><strong>${esc(data.anchor?.title)}</strong><span>${esc(data.domainLabel)}</span>
-      <span>Alignment ${esc(n(s.alignmentIndex))}/100</span><span class="prov prov-${data.mode === 'live' ? 'live' : 'simulated'}">${data.mode === 'live' ? 'live' : 'simulated'}</span></div>
+      <span>Alignment ${esc(n(s.alignmentIndex))}/100</span><span class="prov prov-${sourceClass(source)}">${esc(sourceLabel(source))}</span><span>${esc(sourceCounts(source))}</span></div>
     <div class="partners">${(data.results || []).map((r) => `<article class="partner">${frame(r, SHORT_DOMAIN[data.targetDomain] || '')}
       <div class="p-cat">${ws.has(r.entityId) ? '<span class="badge-ws">White space</span>' : ''}</div>
       <div class="p-name">${esc(r.name)}</div>${bars(r.affinity, r.popularity)}<div class="p-id">${esc(r.entityId)}</div></article>`).join('')}</div>
@@ -265,6 +288,7 @@ export function renderQuickScan(data) {
 
 export function memoToMarkdown(brief, result) {
   const { memo, scorecard: card, evidence } = result;
+  const source = dataSource(evidence);
   const p = (v) => (v === null || v === undefined ? 'n/a' : `${v}%`);
   return [
     `# Audience Coverage: ${brief.title}`,
@@ -272,6 +296,7 @@ export function memoToMarkdown(brief, result) {
     `**Verdict:** ${memo.verdict} (${memo.confidence} confidence) · **Culture risk:** ${card.cultureRiskScore}/100`,
     `**Alignment:** ${card.alignment}/100 · **Comp overlap:** ${p(card.coherence)} · **Demographic fit:** ${p(card.demographics)} · **Concept fit:** ${p(card.conceptFit)}`,
     `**Comparables:** ${evidence.comps.map((c) => c.name).join(' × ')}`,
+    `**Data:** ${sourceLabel(source)} (${sourceCounts(source)})`,
     '',
     `> ${memo.headline}`,
     '',
@@ -280,7 +305,7 @@ export function memoToMarkdown(brief, result) {
     '## The audience', memo.audiencePortrait, '',
     '## The concept', memo.conceptFinding, '',
     '## Partners',
-    ...memo.recommendations.map((r) => `- **${r.name}** (${DOMAIN_LABELS[r.domain] || r.domain}, Qloo \`${r.entityId}\`): ${r.action} _${r.evidence}_`),
+    ...memo.recommendations.map((r) => `- **${r.name}** (${DOMAIN_LABELS[r.domain] || r.domain}, ${entityIdLabel(r)} \`${r.entityId}\`): ${r.action} _${r.evidence}_`),
     '',
     ...(memo.popularityTraps.length ? ['## Without Qloo: popularity traps', ...memo.popularityTraps.map((t) => `- ${t.name}: popularity ${pct(t.popularity)}, audience affinity ${pct(t.affinity)}`), ''] : []),
     '## Risks',
@@ -289,6 +314,6 @@ export function memoToMarkdown(brief, result) {
     '## Next steps',
     ...memo.nextSteps.map((s, i) => `${i + 1}. ${s}`),
     '',
-    `_CultureRisk coverage from ${evidence.calls.length} Qloo API calls (${evidence.liveData ? 'live data' : 'simulated data'})._`,
+    `_CultureRisk coverage from ${evidence.calls.length} calls (${sourceLabel(source)}; ${sourceCounts(source)})._`,
   ].join('\n');
 }

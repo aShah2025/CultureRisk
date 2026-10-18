@@ -70,11 +70,12 @@ async function callTool(name, args = {}) {
       audience: r.memo.audiencePortrait,
       comp_stress_test: r.memo.compFinding,
       concept_fit: r.memo.conceptFinding,
-      recommendations: r.memo.recommendations.map((x) => ({ domain: x.domain, name: x.name, qloo_entity_id: x.entityId, action: x.action, evidence: x.evidence })),
+      recommendations: r.memo.recommendations.map((x) => ({ domain: x.domain, name: x.name, qloo_entity_id: x.entityId, simulated: x.simulated, qloo_verified: x.qlooVerified, action: x.action, evidence: x.evidence })),
       popularity_traps: r.memo.popularityTraps,
       risks: r.memo.risks,
       next_steps: r.memo.nextSteps,
-      data_provenance: r.evidence.liveData ? 'live Qloo data' : 'simulated (no Qloo key configured)',
+      data_provenance: { live: 'live Qloo data', mixed: 'mixed live and simulated data', fallback: 'simulated fallback data', simulated: 'simulated data' }[r.evidence.dataProvenance.mode],
+      data_source_counts: r.evidence.dataProvenance,
       qloo_calls: r.evidence.calls.length,
     });
   }
@@ -85,6 +86,7 @@ async function callTool(name, args = {}) {
     const qloo = createQlooService();
     const resolved = await Promise.all(titles.map((t) => qloo.search(t, 'urn:entity:movie', 1)));
     const ids = resolved.map((r) => r.data[0]?.entityId).filter(Boolean);
+    if (!ids.length) return { ...text({ error: 'Qloo could not resolve any comparable title. Check the spelling or try another film.', entities: [] }), isError: true };
     const { data, provenance } = await qloo.insights({ filterType: args.domain, entityIds: ids, take: 10 });
     return text({
       domain: args.domain,

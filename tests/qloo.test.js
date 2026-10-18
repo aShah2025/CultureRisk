@@ -59,6 +59,66 @@ test('search normalises results', async () => {
   assert.equal(out[0].year, 2017);
 });
 
+test('a documented search 404 stays an empty live result instead of inventing a simulated film', async () => {
+  const client = createQlooClient(cfg(fakeFetch({ '/search': { status: 404, body: {} } }).impl));
+  const service = createQlooService({ config: { apiKey: 'k' }, liveClient: client });
+  const result = await service.search('Unknown film', 'urn:entity:movie');
+  assert.deepEqual(result.data, []);
+  assert.equal(result.provenance, 'live');
+  assert.equal(service.calls[0].failure, null);
+});
+
+test('brief throttling retries once using Retry-After and keeps the real result', async () => {
+  const delays = [];
+  let requests = 0;
+  const client = createQlooClient({
+    ...cfg(async () => {
+      requests += 1;
+      if (requests === 1) return { ok: false, status: 429, headers: { get: () => '1' } };
+      return { ok: true, status: 200, json: async () => ({ results: [{ entity_id: 'real-film', name: 'Real film' }] }) };
+    }),
+    timeoutMs: 3000,
+    sleepImpl: async (ms) => delays.push(ms),
+  });
+  const result = await client.search('Real film', 'urn:entity:movie');
+  assert.equal(requests, 2);
+  assert.deepEqual(delays, [1000]);
+  assert.equal(result[0].entityId, 'real-film');
+});
+
+test('long throttles and authentication failures are not retried', async () => {
+  for (const status of [429, 401, 403]) {
+    let requests = 0;
+    const client = createQlooClient({
+      ...cfg(async () => { requests += 1; return { ok: false, status, headers: { get: () => '60' } }; }),
+      sleepImpl: async () => assert.fail('Must not wait for a retry'),
+    });
+    await assert.rejects(client.search('Title', 'urn:entity:movie'), (e) => e.code === `http_${status}`);
+    assert.equal(requests, 1);
+  }
+});
+
+test('repeated service interruptions stop after one retry', async () => {
+  let requests = 0;
+  const client = createQlooClient({
+    ...cfg(async () => { requests += 1; return { ok: false, status: 503, headers: { get: () => '0' } }; }),
+    sleepImpl: async () => {},
+  });
+  await assert.rejects(client.search('Title', 'urn:entity:movie'), (e) => e.code === 'http_503');
+  assert.equal(requests, 2);
+});
+
+test('the deadline covers reading the response body as well as receiving headers', async () => {
+  const client = createQlooClient({
+    ...cfg(async (_url, { signal }) => ({
+      ok: true,
+      json: () => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true })),
+    })),
+    timeoutMs: 20,
+  });
+  await assert.rejects(client.search('Title', 'urn:entity:movie'), (e) => e.code === 'upstream_timeout');
+});
+
 test('service uses simulated data when no key is configured', async () => {
   const svc = createQlooService({ config: { apiKey: null } });
   assert.equal(svc.mode, 'simulated');
@@ -84,6 +144,15 @@ test('service routes simulated IDs straight to the simulator', async () => {
   const svc = createQlooService({ config: { apiKey: 'k' }, liveClient: live });
   await svc.insights({ filterType: 'urn:entity:brand', entityIds: ['mock:movie:x'] });
   assert.equal(liveCalled, false);
+});
+
+test('taste tag audit logs include tag signals and do not send simulated tags to Qloo', async () => {
+  let liveCalled = false;
+  const svc = createQlooService({ config: { apiKey: 'k' }, liveClient: { tasteTags: async () => { liveCalled = true; return []; } } });
+  const result = await svc.tasteTags({ tagIds: ['mock:tag:horror'], take: 4 });
+  assert.equal(liveCalled, false);
+  assert.equal(result.failure, 'simulated_signal');
+  assert.deepEqual(svc.calls[0].params['signal.interests.tags'], ['mock:tag:horror']);
 });
 
 test('simulator is deterministic and anchor-sensitive', async () => {

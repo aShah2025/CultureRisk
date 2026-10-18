@@ -50,5 +50,5 @@ export const agentStep = (brief, state, signal) => request('/api/agent', { metho
 
 export function quickScan(anchor, domain, signal) {
   const params = new URLSearchParams({ scriptAnchor: anchor, targetDomain: domain });
-  return request(`/api/qloo_bridge?${params}`, { signal, timeoutMs: 15000 });
+  return request(`/api/qloo_bridge?${params}`, { signal, timeoutMs: 27000 });
 }

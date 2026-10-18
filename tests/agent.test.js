@@ -3,7 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createQlooService } = require('../netlify/lib/qloo-service');
-const { createLedger } = require('../netlify/lib/agent/ledger');
+const { createLedger, hydrateLedger, recordCalls, summarizeCalls } = require('../netlify/lib/agent/ledger');
+const { finalizeSession } = require('../netlify/lib/agent/synthesis');
 const { normalizeBrief, extractThemes } = require('../netlify/lib/agent/brief');
 const { candidates, nextAction, describePlan } = require('../netlify/lib/agent/policy');
 const { runAgentStep, runToCompletion } = require('../netlify/lib/agent/runner');
@@ -121,12 +122,16 @@ test('full session produces a grounded memo with every evidence section', async 
   assert.equal(memo.verdict, scorecard.verdict);
   assert.ok(memo.recommendations.length >= 4);
   assert.equal(grounding.grounded, grounding.total);
+  assert.equal(grounding.qlooVerified, 0);
+  assert.equal(grounding.simulated, grounding.total);
+  assert.ok(memo.recommendations.every((r) => r.grounded && r.simulated && !r.qlooVerified));
   assert.ok(evidence.demographics.byComp.length === 2);
   assert.ok(evidence.coherence.value >= 0 && evidence.coherence.value <= 1);
   assert.ok(evidence.conceptFit);
   assert.ok(evidence.compare.shared.length >= 0);
   assert.ok(evidence.calls.length >= 10);
   assert.ok(evidence.calls.every((c) => c.provenance === 'simulated'));
+  assert.deepEqual(evidence.dataProvenance, { mode: 'simulated', total: evidence.calls.length, live: 0, fallback: 0, simulated: evidence.calls.length });
   assert.ok(memo.risks.some((x) => x.risk.includes('simulated')));
   // Endpoints exercised across the session.
   const endpoints = new Set(evidence.calls.map((c) => `${c.endpoint} ${c.params['filter.type'] || ''}`.trim()));
@@ -139,4 +144,50 @@ test('session is deterministic for the same brief', async () => {
   const b = await runToCompletion({ brief: brief(), makeQloo: simulated });
   assert.deepEqual(a.scorecard, b.scorecard);
   assert.deepEqual(a.memo.recommendations, b.memo.recommendations);
+});
+
+for (const scenario of [
+  { mode: 'live', calls: ['live', 'live'], counts: [2, 0, 0], confidence: 'high' },
+  { mode: 'mixed', calls: ['live', 'fallback', 'simulated'], counts: [1, 1, 1], confidence: 'medium' },
+  { mode: 'fallback', calls: ['fallback', 'fallback'], counts: [0, 2, 0], confidence: 'medium' },
+  { mode: 'simulated', calls: ['simulated', 'simulated'], counts: [0, 0, 2], confidence: 'medium' },
+]) {
+  test(`final report derives ${scenario.mode} provenance and confidence from every call`, () => {
+    const ledger = createLedger();
+    ledger.comps.push({ entityId: 'movie-a', name: 'Comp A' }, { entityId: 'movie-b', name: 'Comp B' });
+    ledger.coherence = { value: 0.8 };
+    ledger.conceptFit = { value: 0.8, conceptTop: ['Film'] };
+    ledger.demographics = { coherence: 0.8, byComp: [] };
+    for (const [i, urn] of ['urn:entity:brand', 'urn:entity:artist'].entries()) {
+      const simulatedId = scenario.mode === 'fallback' || scenario.mode === 'simulated' || (scenario.mode === 'mixed' && i === 1);
+      ledger.domains[urn] = { entities: [{ entityId: simulatedId ? `mock:partner:${i}` : `live-partner-${i}`, name: `Partner ${i}`, affinity: 0.85, popularity: 0.5 }] };
+    }
+    recordCalls(ledger, scenario.calls.map((provenance) => ({ endpoint: 'GET /v2/insights', provenance, params: {}, count: 1 })));
+    // Ignore stale client-echoed booleans when classifying report provenance.
+    ledger.liveData = true;
+    const result = finalizeSession(brief(), ledger);
+    const [live, fallback, simulatedCount] = scenario.counts;
+    assert.deepEqual(result.evidence.dataProvenance, { mode: scenario.mode, total: scenario.calls.length, live, fallback, simulated: simulatedCount });
+    assert.equal(result.evidence.liveData, live > 0);
+    assert.equal(result.scorecard.confidence, scenario.confidence);
+    assert.equal(result.memo.confidence, scenario.confidence);
+    assert.equal(result.grounding.grounded, result.grounding.total);
+    assert.equal(result.grounding.qlooVerified, scenario.mode === 'live' ? 2 : scenario.mode === 'mixed' ? 1 : 0);
+    assert.ok(result.memo.recommendations.filter((r) => r.simulated).every((r) => !r.qlooVerified));
+    if (scenario.mode !== 'live') {
+      assert.match(result.memo.headline, /provisional coverage/);
+      assert.match(result.memo.executiveSummary, new RegExp(`Data: ${scenario.mode}`));
+      assert.equal(result.memo.risks[0].severity, 'high');
+      assert.match(result.memo.risks[0].risk, /simulated/i);
+    } else {
+      assert.ok(!result.memo.risks.some((r) => /simulated|fallback/i.test(r.risk)));
+    }
+  });
+}
+
+test('ledger hydration derives legacy liveData from recorded calls, with conservative empty and unknown provenance', () => {
+  assert.equal(hydrateLedger({ calls: [{ provenance: 'fallback' }], liveData: true }).liveData, false);
+  assert.equal(hydrateLedger({ calls: [{ provenance: 'live' }], liveData: false }).liveData, true);
+  assert.equal(summarizeCalls([]).mode, 'simulated');
+  assert.deepEqual(summarizeCalls([{ provenance: 'live' }, {}]), { mode: 'mixed', total: 2, live: 1, fallback: 0, simulated: 1 });
 });

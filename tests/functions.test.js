@@ -34,6 +34,64 @@ test('agent: GET reports capabilities', async () => {
   assert.equal(body.qlooMode, 'simulated');
 });
 
+test('qloo_bridge: an unknown live title returns not found without a simulated recommendation', async () => {
+  const oldFetch = globalThis.fetch;
+  const oldKey = process.env.QLOO_HACKATHON_API_KEY;
+  process.env.QLOO_HACKATHON_API_KEY = 'test-live-key';
+  globalThis.fetch = async () => ({ ok: false, status: 404 });
+  try {
+    const res = await bridge.handler(get({ scriptAnchor: 'Unknown title' }));
+    assert.equal(res.statusCode, 404);
+    assert.equal(parse(res).error, 'not_found');
+    assert.match(parse(res).message, /no film matching/);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldKey === undefined) delete process.env.QLOO_HACKATHON_API_KEY;
+    else process.env.QLOO_HACKATHON_API_KEY = oldKey;
+  }
+});
+
+test('MCP audience affinities stops when live Qloo cannot resolve any title', async () => {
+  const oldFetch = globalThis.fetch;
+  const oldKey = process.env.QLOO_HACKATHON_API_KEY;
+  const paths = [];
+  process.env.QLOO_HACKATHON_API_KEY = 'test-live-key';
+  globalThis.fetch = async (url) => { paths.push(new URL(url).pathname); return { ok: false, status: 404 }; };
+  try {
+    const reply = parse(await mcp.handler(post({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'audience_affinities', arguments: { comparable_titles: ['Unknown A', 'Unknown B'], domain: 'urn:entity:brand' } } })));
+    assert.equal(reply.result.isError, true);
+    assert.deepEqual(reply.result.structuredContent.entities, []);
+    assert.match(reply.result.structuredContent.error, /could not resolve/);
+    assert.deepEqual(paths, ['/search', '/search']);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldKey === undefined) delete process.env.QLOO_HACKATHON_API_KEY;
+    else process.env.QLOO_HACKATHON_API_KEY = oldKey;
+  }
+});
+
+test('MCP greenlight output discloses mixed data and simulated recommendation IDs', async () => {
+  const oldFetch = globalThis.fetch;
+  const oldKey = process.env.QLOO_HACKATHON_API_KEY;
+  process.env.QLOO_HACKATHON_API_KEY = 'test-live-key';
+  globalThis.fetch = async (url) => new URL(url).pathname === '/search'
+    ? { ok: true, json: async () => ({ results: [{ entity_id: 'real-film', name: 'Real Film' }] }) }
+    : { ok: false, status: 401 };
+  try {
+    const reply = parse(await mcp.handler(post({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'greenlight_analysis', arguments: { comparable_titles: ['Real Film'], domains: ['urn:entity:brand'] } } })));
+    const result = reply.result.structuredContent;
+    assert.equal(result.data_provenance, 'mixed live and simulated data');
+    assert.equal(result.data_source_counts.mode, 'mixed');
+    assert.notEqual(result.confidence, 'high');
+    assert.ok(result.recommendations.length > 0);
+    assert.ok(result.recommendations.every((r) => r.simulated && !r.qloo_verified));
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldKey === undefined) delete process.env.QLOO_HACKATHON_API_KEY;
+    else process.env.QLOO_HACKATHON_API_KEY = oldKey;
+  }
+});
+
 test('agent: rejects bad methods, bad JSON, and briefs without anchors', async () => {
   assert.equal((await agent.handler({ httpMethod: 'DELETE' })).statusCode, 405);
   assert.equal((await agent.handler({ httpMethod: 'POST', body: '{nope' })).statusCode, 400);
@@ -52,7 +110,8 @@ test('agent: a full session completes through the HTTP handler with echoed state
     state = body.state;
   }
   assert.equal(body.status, 'done');
-  assert.ok(body.memo.executiveSummary.startsWith('T scores'));
+  assert.match(body.memo.executiveSummary, /T scores/);
+  assert.equal(body.evidence.dataProvenance.mode, 'simulated');
 });
 
 test('mcp: initialize, tools/list, tools/call, notifications, and errors', async () => {
