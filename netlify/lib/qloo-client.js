@@ -179,9 +179,10 @@ function createQlooClient({ apiKey, baseUrl, timeoutMs, fetchImpl = globalThis.f
     },
 
     /** Resolve free text to Qloo tag IDs (typo tolerant). */
-    async tags(query, take = 5) {
+    async tags(query, take = 5, parentTypes = ['urn:entity:movie']) {
       const params = new URLSearchParams();
       params.set('filter.query', query);
+      if (parentTypes.length) params.set('filter.parents.types', parentTypes.join(','));
       params.set('feature.typo_tolerance', 'true');
       params.set('take', String(take));
       const data = await get('/v2/tags', params);
@@ -199,10 +200,14 @@ function createQlooClient({ apiKey, baseUrl, timeoutMs, fetchImpl = globalThis.f
      * @param {boolean} [q.explain]      feature.explainability
      * @param {number} [q.popularityMax] filter.popularity.max (white-space hunting)
      */
-    async insights({ filterType, entityIds = [], tagIds = [], take = 8, explain = false, popularityMax = null }) {
+    async insights({ filterType, entityIds = [], tagIds = [], take = 8, explain = false, popularityMax = null, popularityMin = null, excludeIds = [], filterTags = [], filterResults = [] }) {
       const params = signalParams(filterType, { entityIds, tagIds, take });
+      if (filterTags.length) params.set('filter.tags', filterTags.join(','));
+      if (filterResults.length) params.set('filter.results.entities', filterResults.join(','));
       if (explain) params.set('feature.explainability', 'true');
       if (typeof popularityMax === 'number') params.set('filter.popularity.max', String(popularityMax));
+      if (typeof popularityMin === 'number') params.set('filter.popularity.min', String(popularityMin));
+      if (excludeIds.length) params.set('filter.exclude.entities', excludeIds.join(','));
       const data = await get('/v2/insights', params);
       const entities = data?.results?.entities ?? [];
       if (!Array.isArray(entities) || entities.length === 0) {
@@ -221,8 +226,10 @@ function createQlooClient({ apiKey, baseUrl, timeoutMs, fetchImpl = globalThis.f
     },
 
     /** Taste analysis: the tags that best describe an audience (filter.type=urn:tag). */
-    async tasteTags({ entityIds = [], tagIds = [], take = 10 }) {
+    async tasteTags({ entityIds = [], tagIds = [], take = 10, tagTypes = [], parentTypes = [] }) {
       const params = signalParams('urn:tag', { entityIds, tagIds, take });
+      if (tagTypes.length) params.set('filter.tag.types', tagTypes.join(','));
+      if (parentTypes.length) params.set('filter.parents.types', parentTypes.join(','));
       const data = await get('/v2/insights', params);
       const list = data?.results?.tags ?? [];
       if (!Array.isArray(list) || list.length === 0) throw new QlooError('tags_empty');
@@ -239,7 +246,11 @@ function createQlooClient({ apiKey, baseUrl, timeoutMs, fetchImpl = globalThis.f
       const data = await get('/v2/analysis/compare', params);
       const list = Array.isArray(data?.results) ? data.results : data?.results?.tags ?? data?.results?.entities ?? [];
       if (!Array.isArray(list) || list.length === 0) throw new QlooError('compare_empty');
-      return list.slice(0, take).map((r) => ({ name: r?.name || r?.tag_id || r?.entity_id || 'Unnamed', id: r?.tag_id || r?.entity_id || r?.id || null }));
+      const seen = new Set();
+      return list
+        .map((r) => ({ name: r?.name || r?.tag_id || r?.entity_id || 'Unnamed', id: r?.tag_id || r?.entity_id || r?.id || null }))
+        .filter((r) => { const k = r.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+        .slice(0, take);
     },
   };
 }

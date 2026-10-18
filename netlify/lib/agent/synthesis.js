@@ -48,14 +48,10 @@ function buildRecommendations(ledger) {
   const recs = [];
   const traps = [];
   for (const [urn, d] of Object.entries(ledger.domains)) {
-    const pool = [...d.entities, ...(d.probe || [])];
-    const gaps = whiteSpace(pool);
-    const gapIds = new Set(gaps.map((g) => g.entityId));
-    const ordered = [...gaps.map((g) => pool.find((e) => e.entityId === g.entityId)), ...d.entities]
-      .filter((e, i, arr) => e && arr.findIndex((x) => x.entityId === e.entityId) === i)
-      .slice(0, 3);
-    ordered.forEach((e) => {
-      const ws = gapIds.has(e.entityId);
+    // Recommendations come from the distinctive band (household names filtered out by Qloo popularity).
+    const pool = [...d.entities, ...(d.probe || [])].filter((e, i, arr) => arr.findIndex((x) => x.entityId === e.entityId) === i);
+    pool.slice(0, 3).forEach((e) => {
+      const ws = typeof e.affinity === 'number' && typeof e.popularity === 'number' && e.affinity - e.popularity >= 0.08;
       const driver = driverNote(e, ledger.comps);
       recs.push({
         domain: urn,
@@ -63,15 +59,20 @@ function buildRecommendations(ledger) {
         entityId: e.entityId,
         image: e.image ?? null,
         whiteSpace: ws,
+        affinity: e.affinity,
+        popularity: e.popularity,
+        explainability: e.explainability ?? null,
+        tags: e.tags || [],
         action: (ACTIONS[urn] || ((n) => `Engage ${n}.`))(e.name, ws),
-        evidence: `Affinity ${pct(e.affinity)} vs popularity ${pct(e.popularity)}${ws ? ` (+${Math.round((e.affinity - e.popularity) * 100)} pts white space)` : ''}${driver ? ` · ${driver}` : ''}.`,
+        evidence: `Audience affinity ${pct(e.affinity)}, popularity percentile ${pct(e.popularity)}${ws ? ` (+${Math.round((e.affinity - e.popularity) * 100)} pts above its fame)` : ''}${driver ? ` · ${driver}` : ''}.`,
       });
     });
-    // Popularity trap: the most famous name in the results that this audience is lukewarm on.
-    const trap = [...d.entities]
-      .filter((e) => typeof e.popularity === 'number' && typeof e.affinity === 'number' && e.popularity - e.affinity >= 0.12)
-      .sort((a, b) => (b.popularity - b.affinity) - (a.popularity - a.affinity))[0];
-    if (trap) traps.push({ domain: urn, name: trap.name, entityId: trap.entityId, image: trap.image ?? null, popularity: trap.popularity, affinity: trap.affinity });
+    // The obvious names: what Qloo ranks first with no filter. Famous everywhere, so not distinctive here.
+    const distinctiveIds = new Set(pool.map((e) => e.entityId));
+    (d.mainstream || [])
+      .filter((e) => !distinctiveIds.has(e.entityId) && typeof e.popularity === 'number' && e.popularity >= 0.97)
+      .slice(0, 2)
+      .forEach((e) => traps.push({ domain: urn, name: e.name, entityId: e.entityId, image: e.image ?? null, popularity: e.popularity, affinity: e.affinity }));
   }
   return { recs, traps };
 }
@@ -102,7 +103,7 @@ function buildRisks(ledger, card) {
     risks.push({ severity: 'medium', risk: `Demographic split: ${a.name} skews ${AGE_LABEL[a.headline.peakAge] || 'n/a'}, ${b.name} skews ${AGE_LABEL[b.headline.peakAge] || 'n/a'} (similarity ${pct(demo)}).`, mitigation: 'Run separate creative for each demo, or cast to bridge them.' });
   }
   if (ledger.flags.conceptDrift) {
-    risks.push({ severity: 'high', risk: `Concept drift: the audience for the script's own themes overlaps the comps by only ${pct(ledger.conceptFit?.value)}.`, mitigation: `Either rewrite toward the comps' taste or re-comp against titles like ${list((ledger.conceptFit?.conceptTop || []).slice(0, 2))}.` });
+    risks.push({ severity: 'high', risk: `Concept drift: the comps' audience shows little appetite for the script's genres (concept fit ${pct(ledger.conceptFit?.value)}).`, mitigation: `Either rewrite toward the comps' taste or re-comp against titles like ${list((ledger.conceptFit?.conceptTop || []).slice(0, 2))}.` });
   }
   for (const [urn, p] of Object.entries(card.profiles)) {
     if (ledger.flags[`weak:${urn}`] || (p.alignment !== null && p.alignment < 60)) {
@@ -121,6 +122,7 @@ function buildRisks(ledger, card) {
 
 function headlineFor(card, ledger) {
   const coh = ledger.coherence?.value;
+  if (card.gates?.length) return card.gates[0].reason;
   switch (card.verdict) {
     case 'GREENLIGHT': return 'A coherent, well-defined audience with strong cross-domain pull. Proceed.';
     case 'CONDITIONAL GREENLIGHT': return typeof coh === 'number' && coh < 0.55
@@ -151,9 +153,11 @@ function composeMemo(brief, ledger) {
       (ledger.bridges?.length ? ` Bridge titles that span both audiences: ${list(ledger.bridges.map((b) => b.name))}.` : '')
     : 'A single comparable title was supplied, so the comp stress test was not run.';
 
-  const conceptFinding = ledger.conceptFit
-    ? `The script's own themes (${list([...new Set(ledger.conceptTags.map((t) => t.name))].slice(0, 3))}) attract fans of ${list(ledger.conceptFit.conceptTop.slice(0, 3))}. Concept-to-comp fit is ${pct(ledger.conceptFit.value)}${ledger.leadComp ? `, closest to ${ledger.leadComp}` : ''}.`
-    : 'No distinctive themes were detected in the treatment, so concept fit was not measured.';
+  const lanes = ledger.conceptFit?.lanes || [];
+  const conceptFinding = lanes.length
+    ? `Filtering the comps' own audience to each of the script's genres: ${lanes.map((l) => `${l.tag.toLowerCase()} (${l.films.slice(0, 2).map((f) => f.name).join(', ')}; appetite ${pct(l.strength)})`).join('; ')}. ` +
+      `Overall concept fit ${pct(ledger.conceptFit.value)}${ledger.leadComp ? `, closest to ${ledger.leadComp}'s audience` : ''}.`
+    : 'No distinctive genres were detected in the treatment, so concept fit was not measured.';
 
   const topRec = recs.find((r) => r.whiteSpace) || recs[0];
   const summary = [
@@ -168,7 +172,7 @@ function composeMemo(brief, ledger) {
     ledger.leadComp && ledger.comps.length > 1 ? `Lead the pitch deck with ${ledger.leadComp}${ledger.bridges?.[0] ? ` and add ${ledger.bridges[0].name} as a bridge comp` : ''}.` : null,
     recs.find((r) => r.domain === 'urn:entity:brand') ? `Open partnership conversations with ${recs.find((r) => r.domain === 'urn:entity:brand').name}.` : null,
     recs.find((r) => r.domain === 'urn:entity:artist') ? `Shortlist ${recs.find((r) => r.domain === 'urn:entity:artist').name} for music.` : null,
-    traps[0] ? `Avoid overpaying for ${traps[0].name}. It is famous, but this audience is lukewarm on it.` : null,
+    traps[0] ? `Don't default to ${traps[0].name}: it tops every audience's list, so it says nothing about this one.` : null,
     'Re-run CultureRisk after casting and before budget lock.',
   ].filter(Boolean);
 
@@ -221,12 +225,13 @@ function finalizeSession(brief, ledger) {
       tasteDna: ledger.tasteDna,
       demographics: ledger.demographics,
       compare: ledger.compare,
-      compLists: ledger.compLists ? ledger.compLists.map((l) => ({ anchor: l.anchor, top: l.top.slice(0, 6).map((e) => e.name) })) : null,
+      compLists: ledger.compLists ? ledger.compLists.map((l) => ({ anchor: l.anchor, entityId: l.entityId, films: l.top.slice(0, 6).map((e) => ({ entityId: e.entityId, name: e.name, image: e.image ?? null, affinity: e.affinity })), top: l.top.slice(0, 6).map((e) => e.name) })) : null,
       blendedFilms: (ledger.blendedFilms || []).slice(0, 6),
       coherence: ledger.coherence,
       conceptFit: ledger.conceptFit,
       bridges: ledger.bridges,
-      domains: Object.fromEntries(Object.entries(ledger.domains).map(([urn, d]) => [urn, { entities: d.entities.slice(0, 8), probe: d.probe, drivers: d.drivers, retried: d.retried, profile: domainProfile(d.entities) }])),
+      leadComp: ledger.leadComp,
+      domains: Object.fromEntries(Object.entries(ledger.domains).map(([urn, d]) => [urn, { entities: d.entities.slice(0, 8), mainstream: (d.mainstream || []).slice(0, 6), probe: d.probe, drivers: d.drivers, retried: d.retried, profile: domainProfile(d.entities) }])),
       calls: ledger.calls,
       dataProvenance,
       liveData: dataProvenance.live > 0,

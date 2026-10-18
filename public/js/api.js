@@ -52,3 +52,5 @@ export function quickScan(anchor, domain, signal) {
   const params = new URLSearchParams({ scriptAnchor: anchor, targetDomain: domain });
   return request(`/api/qloo_bridge?${params}`, { signal, timeoutMs: 27000 });
 }
+
+export const searchTitles = (q, signal) => request(`/api/search?${new URLSearchParams({ q })}`, { signal, timeoutMs: 12000 });

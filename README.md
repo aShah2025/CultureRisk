@@ -69,6 +69,11 @@ Studio executives already read **script coverage**, the short, blunt document th
 - **VII. Risks and next steps.**
 - **Appendices:** the agent's full notes and a ledger of every Qloo call.
 
+**It's interactive, not a static report:**
+- **Live comp picker:** typing searches Qloo and shows real posters.
+- **Partner explorer:** toggle *Distinctive* ↔ *Mass-market* per category. Click any partner for its evidence (affinity vs popularity, which comp's fans drive it via `feature.explainability`, Qloo tags) and pin it to a **deal sheet** you can export as CSV.
+- **Re-run with a bridge title:** one click swaps a bridge title in as a comp and re-runs the agent.
+
 Every chart carries a source line naming the Qloo endpoint and parameters it came from. The document prints cleanly to PDF.
 
 **Why no LLM?** Studios need to defend a greenlight in front of a board. A deterministic agent gives the same answer for the same evidence, can't hallucinate an entity, and every claim is traceable to a Qloo call. The memo is generated from the evidence ledger, and the server verifies every recommended entity ID against what Qloo returned in the session.
@@ -78,11 +83,11 @@ Every chart carries a source line naming the Qloo endpoint and parameters it cam
 | Metric | Definition |
 |---|---|
 | **Domain alignment** | Mean Qloo affinity of the top results per partner domain (0–100) |
-| **Comp taste overlap** | 0.6 × Jaccard + 0.4 × rank agreement between each comp's top Qloo film affinities |
+| **Comp overlap** | Qloo cross-affinity: each comp scored against the other's audience (`filter.results.entities`), calibrated on live pairs (Paddington 2 × Saw ≈ 0.65 → 0; The Revenant × Everest ≈ 0.93 → 1) |
 | **Demographic fit** | Cosine similarity of the comps' Qloo age/gender affinity vectors, mapped to 0–100 |
-| **Concept fit** | Overlap between the audience Qloo finds for the script's themes and the comps' blended audience |
-| **White space** | Entities whose affinity exceeds their popularity by ≥ 8 points |
-| **Culture risk** | 100 − weighted mean (40% alignment, 25% overlap, 20% concept fit, 15% demographic fit; missing parts renormalised) + dispersion penalty → **GREENLIGHT / CONDITIONAL / REWORK / PASS** |
+| **Concept fit** | Genre lanes: the comps' own audience filtered by each of the script's Qloo genre tags (`filter.tags`); appetite = how strongly that audience loves films in the lane |
+| **Distinctive vs mass-market** | Each partner category is queried twice: unfiltered (household names that top every audience) and inside a popularity band (`filter.popularity.min/max`) for picks specific to this audience |
+| **Culture risk** | 100 − weighted mean (40% alignment, 25% overlap, 20% concept fit, 15% demographic fit; missing parts renormalised) + dispersion penalty → **GREENLIGHT / CONDITIONAL / REWORK / PASS**, with deal-breaker gates: comps that don't share an audience cap the verdict at *Consider*; a concept the audience doesn't want caps it at *Rework* |
 
 The memo shows the formula with the actual numbers, so the verdict is explainable.
 

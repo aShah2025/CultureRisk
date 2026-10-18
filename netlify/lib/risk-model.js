@@ -173,6 +173,9 @@ function verdictFor(risk) {
 }
 
 /** Component weights for the composite; missing components are renormalised away. */
+/** Thresholds (0–100) below which a component caps the verdict. */
+const GATES = Object.freeze({ divergentComps: 35, conceptDrift: 25 });
+
 const WEIGHTS = Object.freeze({ alignment: 0.4, coherence: 0.25, conceptFit: 0.2, demographics: 0.15 });
 
 /**
@@ -205,7 +208,17 @@ function scorecard({ domains, coherence = null, conceptFit = null, demographics 
   const present = Object.entries(parts).filter(([, v]) => v !== null);
   const weightSum = present.reduce((s, [k]) => s + WEIGHTS[k], 0);
   const base = present.reduce((s, [k, v]) => s + (WEIGHTS[k] / weightSum) * v, 0);
-  const cultureRiskScore = Math.round(clamp(100 - base + dispersion * 80, 0, 100));
+  const rawScore = Math.round(clamp(100 - base + dispersion * 80, 0, 100));
+
+  // Deal-breaker gates: a strong average must not hide a structural flaw.
+  const gates = [];
+  if (parts.coherence !== null && parts.coherence < GATES.divergentComps) {
+    gates.push({ key: 'coherence', floor: 31, reason: `The comps' audiences barely overlap (${parts.coherence}%), so this can be at best a Consider.` });
+  }
+  if (parts.conceptFit !== null && parts.conceptFit < GATES.conceptDrift) {
+    gates.push({ key: 'conceptFit', floor: 46, reason: `The comps' audience has little appetite for the script's genres (${parts.conceptFit}%), so the package needs rework.` });
+  }
+  const cultureRiskScore = Math.max(rawScore, ...gates.map((g) => g.floor));
 
   // Confidence grows with breadth of evidence and live provenance.
   const evidencePoints = usable.length + present.length - 1 + (liveData ? 2 : 0);
@@ -220,6 +233,8 @@ function scorecard({ domains, coherence = null, conceptFit = null, demographics 
     cultureRiskScore,
     verdict: verdictFor(cultureRiskScore),
     confidence,
+    rawScore,
+    gates: gates.filter((g) => g.floor > rawScore),
     components: present.map(([k, v]) => ({ key: k, value: v, weight: round(WEIGHTS[k] / weightSum, 2) })),
   };
 }

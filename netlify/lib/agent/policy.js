@@ -57,7 +57,7 @@ function candidates(brief, ledger) {
       list.push({ id: `retry:${urn}`, title: `Re-query ${DOMAINS[urn]}`, why: 'Alignment was weak. Try the concept signal instead of the comps.', run: A.domainRetry(urn), conditional: true });
     }
     if (ledger.flags[`probe:${urn}`]) {
-      list.push({ id: `probe:${urn}`, title: `Probe niche ${DOMAINS[urn]}`, why: 'Every pick was mass-market. Look for under-priced partners (filter.popularity.max).', run: A.nicheProbe(urn), conditional: true });
+      list.push({ id: `probe:${urn}`, title: `Widen the ${DOMAINS[urn]} search`, why: 'Too few distinctive picks. Widen the popularity band (filter.popularity.min/max) to find under-the-radar partners.', run: A.nicheProbe(urn), conditional: true });
     }
   }
   return list;

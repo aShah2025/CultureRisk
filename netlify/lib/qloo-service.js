@@ -21,6 +21,7 @@ const { createMockQlooClient } = require('./qloo-mock');
 const { qlooConfig } = require('./config');
 
 const isSimulatedId = (id) => String(id).startsWith('mock:');
+const EMPTY_CODES = new Set(['insights_empty', 'demographics_empty', 'tags_empty', 'compare_empty']);
 
 /**
  * @param {object} [opts]
@@ -53,8 +54,14 @@ function createQlooService(opts = {}) {
           data = await invoke(live);
           provenance = 'live';
         } catch (err) {
-          failure = err?.code || 'upstream_error';
-          console.warn(`[qloo] ${endpoint} live call failed (${failure}); using simulated data.`);
+          if (EMPTY_CODES.has(err?.code)) {
+            // An empty live answer is a real answer ("Qloo has no data for this"), never a reason to simulate.
+            data = [];
+            provenance = 'live';
+          } else {
+            failure = err?.code || 'upstream_error';
+            console.warn(`[qloo] ${endpoint} live call failed (${failure}); using simulated data.`);
+          }
         }
       }
     }
@@ -77,7 +84,7 @@ function createQlooService(opts = {}) {
     },
 
     tags(query, take = 5) {
-      return run('GET /v2/tags', { 'filter.query': query, 'feature.typo_tolerance': true, take }, (c) => c.tags(query, take));
+      return run('GET /v2/tags', { 'filter.query': query, 'filter.parents.types': 'urn:entity:movie', 'feature.typo_tolerance': true, take }, (c) => c.tags(query, take));
     },
 
     insights(q) {
@@ -87,6 +94,10 @@ function createQlooService(opts = {}) {
         'signal.interests.tags': q.tagIds || [],
         ...(q.explain ? { 'feature.explainability': true } : {}),
         ...(typeof q.popularityMax === 'number' ? { 'filter.popularity.max': q.popularityMax } : {}),
+        ...(typeof q.popularityMin === 'number' ? { 'filter.popularity.min': q.popularityMin } : {}),
+        ...(q.excludeIds?.length ? { 'filter.exclude.entities': q.excludeIds } : {}),
+        ...(q.filterTags?.length ? { 'filter.tags': q.filterTags } : {}),
+        ...(q.filterResults?.length ? { 'filter.results.entities': q.filterResults } : {}),
         take: q.take,
       };
       return run('GET /v2/insights', params, (c) => c.insights(q), [...(q.entityIds || []), ...(q.tagIds || [])]);
@@ -98,7 +109,7 @@ function createQlooService(opts = {}) {
     },
 
     tasteTags(q) {
-      const params = { 'filter.type': 'urn:tag', 'signal.interests.entities': q.entityIds || [], 'signal.interests.tags': q.tagIds || [], take: q.take };
+      const params = { 'filter.type': 'urn:tag', 'signal.interests.entities': q.entityIds || [], 'signal.interests.tags': q.tagIds || [], ...(q.tagTypes?.length ? { 'filter.tag.types': q.tagTypes } : {}), ...(q.parentTypes?.length ? { 'filter.parents.types': q.parentTypes } : {}), take: q.take };
       return run('GET /v2/insights', params, (c) => c.tasteTags(q), [...(q.entityIds || []), ...(q.tagIds || [])]);
     },
 

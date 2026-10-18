@@ -17,7 +17,7 @@
 const { DOMAINS } = require('../config');
 const { extractThemes } = require('./brief');
 const {
-  domainProfile, whiteSpace, compCoherence, pairCoherence, demographicCoherence, demographicHeadline,
+  domainProfile, whiteSpace, pairCoherence, demographicCoherence, demographicHeadline,
 } = require('../risk-model');
 
 /** Thresholds that trigger follow-up research. Tuned to be conservative. */
@@ -26,8 +26,11 @@ const THRESHOLDS = Object.freeze({
   demoSplit: 0.45, // demographic coherence below this → bridge search
   conceptDrift: 0.15, // concept-to-comp fit below this → flag drift
   weakDomain: 60, // domain alignment below this → retry with concept signal
-  saturated: 0.8, // mean popularity above this with no white space → niche probe
-  nichePopularityMax: 0.6,
+  // Qloo popularity is a percentile; household names sit at ~0.99. The
+  // "distinctive" band excludes them (and entities with no popularity data).
+  distinctiveMin: 0.3,
+  distinctiveMax: 0.95,
+  nichePopularityMax: 0.8,
 });
 
 const MOVIE = 'urn:entity:movie';
@@ -85,8 +88,11 @@ async function findConceptTags({ brief, ledger, qloo }) {
       tags = (await qloo.tags(themes[i].fallback, 3)).data;
       decisions.push(`No Qloo tag for "${themes[i].query}". Broadened the search to "${themes[i].fallback}".`);
     }
-    tags.slice(0, 2).forEach((t) => {
-      if (!ledger.conceptTags.some((x) => x.tagId === t.tagId)) ledger.conceptTags.push({ theme: themes[i].query, tagId: t.tagId, name: t.name });
+    // Prefer Qloo's media genre tags (they power filter.tags); then subgenres, then keywords.
+    const rank = (t) => (/^urn:tag:genre:media:/.test(t.tagId) ? 0 : /subgenre/.test(t.tagId) ? 1 : 2);
+    tags = [...tags].sort((a, b) => rank(a) - rank(b));
+    tags.slice(0, 1).forEach((t) => {
+      if (!ledger.conceptTags.some((x) => x.tagId === t.tagId)) ledger.conceptTags.push({ theme: themes[i].query, fallback: themes[i].fallback, tagId: t.tagId, name: t.name });
     });
     observations.push(`Theme "${themes[i].query}" → ${tags.slice(0, 2).map((t) => t.name).join(', ') || 'no tags'}`);
   }
@@ -95,7 +101,7 @@ async function findConceptTags({ brief, ledger, qloo }) {
 }
 
 async function tasteDna({ ledger, qloo }) {
-  const { data } = await qloo.tasteTags({ entityIds: compIds(ledger), take: 10 });
+  const { data } = await qloo.tasteTags({ entityIds: compIds(ledger), take: 10, tagTypes: ['urn:tag:genre:media'], parentTypes: ['urn:entity:movie'] });
   ledger.tasteDna = data.map((t) => ({ name: t.name, affinity: t.affinity }));
   return { observations: [`Audience taste DNA: ${data.slice(0, 6).map((t) => t.name).join(' · ')}`], decisions: [] };
 }
@@ -131,48 +137,110 @@ async function qlooCompare({ ledger, qloo }) {
 
 async function tasteOverlap({ ledger, qloo }) {
   const ids = compIds(ledger);
-  const [blended, ...perComp] = await Promise.all([
-    qloo.insights({ filterType: MOVIE, entityIds: ids, take: 12 }),
-    ...(ids.length >= 2 ? ids.map((id) => qloo.insights({ filterType: MOVIE, entityIds: [id], take: 10 })) : []),
-  ]);
   const notComp = (e) => !ids.includes(e.entityId) && !ledger.comps.some((c) => norm(c.name) === norm(e.name));
+  // Sequential on purpose: parallel bursts trip Qloo timeouts on the hackathon tier.
+  const blended = await qloo.insights({ filterType: MOVIE, entityIds: ids, excludeIds: ids, take: 12 });
   ledger.blendedFilms = blended.data.filter(notComp).map(slim);
-
   const observations = [`The blended comp audience also loves: ${ledger.blendedFilms.slice(0, 4).map((e) => e.name).join(', ')}`];
   const decisions = [];
-  if (perComp.length >= 2) {
-    ledger.compLists = ledger.comps.map((c, i) => ({ anchor: c.name, entityId: c.entityId, top: perComp[i].data.filter(notComp).map(slim) }));
-    const result = compCoherence(ledger.compLists.map((l) => ({ anchor: l.anchor, entities: l.top })), 8);
-    ledger.coherence = { value: result.coherence, pairs: result.pairs };
-    observations.push(`Taste-graph overlap between comps: ${pct(result.coherence)} (${result.pairs.map((p) => `${p.shared} shared titles`).join(', ')})`);
-    if (result.coherence < THRESHOLDS.divergentComps) {
-      ledger.flags.divergent = true;
-      decisions.push('The comps\' audiences love different films, so the "X meets Y" audience may not exist. Scheduling a bridge-title search.');
-    } else if (result.coherence < 0.55) {
-      decisions.push('Partial overlap: a hybrid audience exists but is narrower than either comp. Will size recommendations to the overlap.');
-    } else {
-      decisions.push('The comps share a real taste audience. The hybrid pitch holds.');
+  if (ids.length < 2) return { observations, decisions };
+
+  const perComp = [];
+  for (const id of ids) {
+    // eslint-disable-next-line no-await-in-loop
+    perComp.push(await qloo.insights({ filterType: MOVIE, entityIds: [id], excludeIds: ids, take: 10 }));
+  }
+  ledger.compLists = ledger.comps.map((c, i) => ({ anchor: c.name, entityId: c.entityId, provenance: perComp[i].provenance, top: perComp[i].data.filter(notComp).map(slim) }));
+
+  // Cross-affinity: score each comp directly against the other comp's audience
+  // (filter.results.entities). Symmetric in Qloo, so one call per pair.
+  const pairs = [];
+  for (let i = 0; i < ids.length; i += 1) {
+    for (let j = i + 1; j < ids.length; j += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await qloo.insights({ filterType: MOVIE, entityIds: [ids[i]], filterResults: [ids[j]], take: 1 });
+      const affinity = r.data[0]?.affinity ?? null;
+      const shared = pairCoherence(ledger.compLists[i].top, ledger.compLists[j].top, 10).shared;
+      pairs.push({ a: ledger.comps[i].name, b: ledger.comps[j].name, affinity, score: affinity === null ? null : crossScore(affinity), shared, provenance: r.provenance });
     }
+  }
+
+  // Never score a comparison that mixes live and simulated answers.
+  const provenances = new Set([...perComp.map((r) => r.provenance), ...pairs.map((p) => p.provenance)]);
+  const scored = pairs.filter((p) => p.score !== null);
+  if (provenances.size > 1 || !scored.length) {
+    ledger.coherence = null;
+    decisions.push('Comp overlap not scored: Qloo did not return every comparison from the same live source.');
+    return { observations, decisions };
+  }
+  const value = Math.round((scored.reduce((x, p) => x + p.score, 0) / scored.length) * 1000) / 1000;
+  ledger.coherence = { value, pairs, method: 'cross-affinity' };
+  pairs.forEach((p) => observations.push(`${p.a} fans' affinity for ${p.b}: ${p.affinity?.toFixed(3) ?? 'n/a'} (${p.shared} shared titles in their top 10s)`));
+  observations.push(`Comp overlap score: ${pct(value)}`);
+  if (value < THRESHOLDS.divergentComps) {
+    ledger.flags.divergent = true;
+    decisions.push('The comps\' audiences barely like each other\'s films, so the "X meets Y" audience may not exist. Scheduling a bridge-title search.');
+  } else if (value < 0.55) {
+    decisions.push('Partial overlap: a hybrid audience exists but is narrower than either comp. Will size recommendations to the overlap.');
+  } else {
+    decisions.push('The comps share a real audience. The hybrid pitch holds.');
   }
   return { observations, decisions };
 }
 
-async function conceptFit({ ledger, qloo }) {
-  const { data } = await qloo.insights({ filterType: MOVIE, tagIds: conceptTagIds(ledger, 3), take: 12 });
-  const conceptTop = data.map(slim);
-  const fit = pairCoherence(conceptTop, ledger.blendedFilms || [], 10).coherence;
-  const perComp = {};
-  (ledger.compLists || []).forEach((l) => { perComp[l.anchor] = pairCoherence(conceptTop, l.top, 10).coherence; });
-  const lead = Object.entries(perComp).sort((a, b) => b[1] - a[1])[0];
-  ledger.conceptFit = { value: fit, perComp, conceptTop: conceptTop.slice(0, 6).map((e) => e.name) };
-  if (lead) ledger.leadComp = lead[0];
+/** Map a lane's mean Qloo affinity onto 0–1 (0.80 → weak appetite, 0.95 → core appetite). */
+/**
+ * Map a cross-affinity onto 0–1. Calibrated on live Qloo pairs:
+ * Paddington 2 × Saw ≈ 0.65 (unrelated audiences) → 0; The Revenant × Everest ≈ 0.93 → 1.
+ */
+const crossScore = (affinity) => Math.round(Math.min(1, Math.max(0, (affinity - 0.65) / 0.28)) * 1000) / 1000;
 
-  const observations = [`The script's themes attract fans of: ${conceptTop.slice(0, 4).map((e) => e.name).join(', ')}`, `Concept-to-comp audience fit: ${pct(fit)}`];
+const laneStrength = (meanAffinity) => Math.round(Math.min(1, Math.max(0, (meanAffinity - 0.8) / 0.15)) * 1000) / 1000;
+
+async function conceptFit({ ledger, qloo }) {
+  const ids = compIds(ledger);
+  const lanes = [];
+  // One lane per concept tag: the comps' own audience, filtered to that genre (filter.tags).
+  for (let tag of ledger.conceptTags.slice(0, 3)) {
+    // eslint-disable-next-line no-await-in-loop
+    let { data, provenance } = await qloo.insights({ filterType: MOVIE, entityIds: ids, filterTags: [tag.tagId], excludeIds: ids, take: 6 });
+    if (!data.length && tag.fallback) {
+      // Qloo has no films under this exact tag for this audience; retry with the broader genre.
+      // eslint-disable-next-line no-await-in-loop
+      const broader = (await qloo.tags(tag.fallback, 3)).data.find((t) => /^urn:tag:genre:media:/.test(t.tagId));
+      if (broader && !ledger.conceptTags.some((x) => x.tagId === broader.tagId)) {
+        // eslint-disable-next-line no-await-in-loop
+        ({ data, provenance } = await qloo.insights({ filterType: MOVIE, entityIds: ids, filterTags: [broader.tagId], excludeIds: ids, take: 6 }));
+        if (data.length) tag = { ...tag, name: `${tag.name} → ${broader.name}`, tagId: broader.tagId };
+      }
+    }
+    const films = data.map(slim);
+    const affs = films.map((f) => f.affinity).filter((a) => typeof a === 'number');
+    const mean = affs.length ? affs.reduce((x, y) => x + y, 0) / affs.length : null;
+    lanes.push({ tag: tag.name, tagId: tag.tagId, provenance, films, meanAffinity: mean === null ? null : Math.round(mean * 1000) / 1000, strength: mean === null ? null : laneStrength(mean) });
+  }
+  const scored = lanes.filter((l) => l.strength !== null);
+  const mixed = new Set(lanes.map((l) => l.provenance)).size > 1;
+  const value = scored.length && !mixed ? Math.round((scored.reduce((x, l) => x + l.strength, 0) / scored.length) * 1000) / 1000 : null;
+
+  // Lead comp: whose own watchlist shares the most titles with the concept lanes.
+  const laneNames = new Set(lanes.flatMap((l) => l.films.map((f) => norm(f.name))));
+  const perComp = {};
+  (ledger.compLists || []).forEach((l) => { perComp[l.anchor] = l.top.filter((f) => laneNames.has(norm(f.name))).length; });
+  const lead = Object.entries(perComp).sort((a, b) => b[1] - a[1])[0];
+  if (lead && lead[1] > 0) ledger.leadComp = lead[0];
+  ledger.conceptFit = { value, lanes, perComp, conceptTop: lanes.flatMap((l) => l.films.slice(0, 2).map((f) => f.name)).slice(0, 6) };
+
+  const observations = lanes.map((l) => `${l.tag} lane: ${l.films.slice(0, 3).map((f) => f.name).join(', ')} (appetite ${pct(l.strength)})`);
   const decisions = [];
-  if (lead && Object.keys(perComp).length > 1) decisions.push(`The concept sits closest to ${lead[0]}'s audience. Lead the positioning with it.`);
-  if (fit < THRESHOLDS.conceptDrift) {
+  if (mixed) decisions.push('Concept fit not scored: Qloo returned the genre lanes from different sources.');
+  if (ledger.leadComp && Object.keys(perComp).length > 1) decisions.push(`The concept's genres sit closest to ${ledger.leadComp}'s audience. Lead the positioning with it.`);
+  const weak = scored.filter((l) => l.strength < 0.35);
+  if (value !== null && value < THRESHOLDS.conceptDrift * 3) {
     ledger.flags.conceptDrift = true;
-    decisions.push('The script\'s own audience barely overlaps the comps. Flagging concept drift as a risk.');
+    decisions.push('This audience has little appetite for the script\'s genres. Flagging concept drift as a risk.');
+  } else if (weak.length) {
+    decisions.push(`Weak lane: ${weak.map((l) => l.tag).join(', ')}. That part of the concept will need its own marketing.`);
   }
   return { observations, decisions };
 }
@@ -204,29 +272,37 @@ function driverShares(entities, comps) {
 
 function domainSweep(urn) {
   return async ({ ledger, qloo }) => {
-    const { data } = await qloo.insights({ filterType: urn, entityIds: compIds(ledger), tagIds: conceptTagIds(ledger, 1), take: 8, explain: ledger.comps.length > 1 });
-    const entities = data.map(slim);
+    const ids = compIds(ledger);
+    // 1) What Qloo ranks first with no filter: usually household names every audience over-indexes on.
+    const mainstream = await qloo.insights({ filterType: urn, entityIds: ids, take: 6 });
+    // 2) The distinctive band: drop household names, keep what is specific to this audience.
+    const distinctive = await qloo.insights({
+      filterType: urn, entityIds: ids, tagIds: conceptTagIds(ledger, 1), take: 10, explain: ids.length > 1,
+      popularityMin: THRESHOLDS.distinctiveMin, popularityMax: THRESHOLDS.distinctiveMax,
+    });
+    const entities = distinctive.data.filter((e) => (e.popularity ?? 0) > 0).map(slim);
+    const mass = mainstream.data.map(slim);
     const profile = domainProfile(entities);
-    const gaps = whiteSpace(entities);
     const drivers = driverShares(entities, ledger.comps);
-    ledger.domains[urn] = { entities, retried: false, probe: null, drivers };
+    ledger.domains[urn] = { entities, mainstream: mass, retried: false, probe: null, drivers };
 
     const observations = [
-      `${DOMAINS[urn]}: alignment ${profile.alignment}/100. Top picks: ${entities.slice(0, 3).map((e) => e.name).join(', ')}`,
+      `${DOMAINS[urn]}, mass-market: ${mass.slice(0, 3).map((e) => e.name).join(', ')}`,
+      `${DOMAINS[urn]}, distinctive to this audience: ${entities.slice(0, 3).map((e) => e.name).join(', ') || 'none found'} (alignment ${profile.alignment ?? 'n/a'}/100)`,
     ];
     if (drivers) {
       const top = Object.entries(drivers).sort((a, b) => b[1] - a[1])[0];
-      observations.push(`Explainability: ${top[0]} drives ${pct(top[1])} of these affinities`);
+      observations.push(`Explainability: ${top[0]} drives ${pct(top[1])} of the distinctive picks`);
     }
     const decisions = [];
-    if (gaps.length) decisions.push(`White space found: ${gaps[0].name} over-indexes by ${Math.round(gaps[0].gap * 100)} pts vs its popularity.`);
-    if (profile.alignment !== null && profile.alignment < THRESHOLDS.weakDomain) {
+    if (entities.length < 3) {
+      ledger.flags[`probe:${urn}`] = true;
+      decisions.push(`Too few distinctive ${DOMAINS[urn].toLowerCase()} picks. Will widen the search below the ${pct(THRESHOLDS.nichePopularityMax)} popularity line.`);
+    } else if (profile.alignment !== null && profile.alignment < THRESHOLDS.weakDomain) {
       ledger.flags[`retry:${urn}`] = true;
       decisions.push(`Weak alignment. Will re-query ${DOMAINS[urn]} using the concept signal.`);
-    }
-    if (!gaps.length && (profile.meanPopularity ?? 0) > THRESHOLDS.saturated) {
-      ledger.flags[`probe:${urn}`] = true;
-      decisions.push(`Every pick is mass-market (mean popularity ${pct(profile.meanPopularity)}). Will probe for niche partners.`);
+    } else {
+      decisions.push(`Shortlisting ${entities[0].name} over the mass-market default ${mass[0]?.name ?? ''}.`.trim());
     }
     return { observations, decisions };
   };
@@ -254,8 +330,8 @@ function domainRetry(urn) {
 
 function nicheProbe(urn) {
   return async ({ ledger, qloo }) => {
-    const { data } = await qloo.insights({ filterType: urn, entityIds: compIds(ledger), take: 6, popularityMax: THRESHOLDS.nichePopularityMax });
-    const probe = data.map(slim);
+    const { data } = await qloo.insights({ filterType: urn, entityIds: compIds(ledger), take: 6, popularityMin: 0.05, popularityMax: THRESHOLDS.nichePopularityMax });
+    const probe = data.filter((e) => (e.popularity ?? 0) > 0).map(slim);
     ledger.domains[urn] = { ...ledger.domains[urn], probe };
     return {
       observations: [`Niche ${DOMAINS[urn]} picks (popularity ≤ ${pct(THRESHOLDS.nichePopularityMax)}): ${probe.slice(0, 3).map((e) => e.name).join(', ')}`],

@@ -137,3 +137,13 @@ test('mcp: initialize, tools/list, tools/call, notifications, and errors', async
   assert.equal(bad.error.code, -32601);
   assert.equal((await mcp.handler({ httpMethod: 'POST', body: '{' })).statusCode, 400);
 });
+
+test('search: GET only, needs 2+ characters, returns films with posters/years', async () => {
+  const search = require('../netlify/functions/search');
+  assert.equal((await search.handler({ httpMethod: 'POST' })).statusCode, 405);
+  assert.equal((await search.handler(get({ q: 'a' }))).statusCode, 400);
+  const body = parse(await search.handler(get({ q: 'Arrival' })));
+  assert.equal(body.provenance, 'simulated');
+  assert.equal(body.results[0].name, 'Arrival');
+  assert.ok('image' in body.results[0] && 'year' in body.results[0]);
+});

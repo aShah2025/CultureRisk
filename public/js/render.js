@@ -121,8 +121,14 @@ function demoBlock(p) {
     <div class="lean">Peaks at <strong>${esc(AGE_WORDS[p.headline?.peakAge] || 'n/a')}</strong> · ${lean === 'balanced' ? 'gender-balanced' : `leans ${esc(lean)}`}</div></div>`;
 }
 
-function partnerCard(r) {
-  return `<article class="partner">
+/** A row of small Qloo posters. `marked` names get a red rule (shared across comps). */
+function posterStrip(films, marked = new Set()) {
+  return `<div class="strip">${films.map((f) => `<figure class="strip-item${marked.has(f.name) ? ' shared' : ''}">${frame(f, 'Film')}<figcaption>${esc(f.name)}</figcaption></figure>`).join('')}</div>`;
+}
+
+function partnerCard(r, opts = {}) {
+  return `<article class="partner" data-entity="${esc(r.entityId)}" data-domain="${esc(r.domain)}" tabindex="0" role="button" aria-label="Details for ${esc(r.name)}">
+    <button type="button" class="pin" data-act="pin" data-entity="${esc(r.entityId)}" aria-pressed="${opts.pinned ? 'true' : 'false'}" title="Add to deal sheet">${opts.pinned ? '✓ On deal sheet' : '+ Deal sheet'}</button>
     ${frame(r, SHORT_DOMAIN[r.domain] || '')}
     <div class="p-cat">${esc(DOMAIN_LABELS[r.domain] || r.domain)}${r.whiteSpace ? '<span class="badge-ws">White space</span>' : ''}</div>
     <div class="p-name">${esc(r.name)}</div>
@@ -132,7 +138,9 @@ function partnerCard(r) {
   </article>`;
 }
 
-function bars(aff, pop) {
+export { partnerCard };
+
+export function bars(aff, pop) {
   return `<div class="bars">
     <div class="bar-row"><span>Popularity</span><div class="track"><div class="fill" style="width:${barWidth(pop)}%"></div></div><span class="v">${pct(pop)}</span></div>
     <div class="bar-row"><span>Affinity</span><div class="track"><div class="fill aff" style="width:${barWidth(aff)}%"></div></div><span class="v">${pct(aff)}</span></div>
@@ -172,28 +180,39 @@ export function renderCoverage(result, brief, coverageNo) {
   const compsBody = `${faceoff}
     <p style="margin-top:22px">${esc(memo.compFinding)}</p>
     ${evidence.demographics?.byComp?.length ? `<div class="demos">${evidence.demographics.byComp.map(demoBlock).join('')}</div><p class="source">Qloo /v2/insights · filter.type=urn:demographics. Bars right of centre over-index; left under-index.</p>` : ''}
-    ${evidence.compLists ? `<div class="watchlists">${evidence.compLists.map((l) => `<div class="watchlist"><h4>${esc(l.anchor)} fans also love</h4><ol>${l.top.map((nm) => `<li class="${sharedSet.has(nm) ? 'shared' : ''}">${esc(nm)}</li>`).join('')}</ol></div>`).join('')}</div>
-      <p class="source">Qloo /v2/insights · filter.type=urn:entity:movie, one query per comp. Red titles are loved by both audiences.</p>` : ''}
+    ${evidence.coherence?.pairs?.length ? `<div class="cross">${evidence.coherence.pairs.map((p) => `<div class="cross-row"><span>${esc(p.a)} fans rate <strong>${esc(p.b)}</strong></span><div class="track"><div class="fill aff" style="width:${barWidth(p.score)}%"></div></div><span class="v">${p.affinity === null ? 'n/a' : esc(p.affinity.toFixed(3))}</span></div>`).join('')}</div>
+      <p class="source">Qloo /v2/insights · filter.results.entities: each comp scored against the other's audience. 0.65 = unrelated audiences, 0.93 = same audience.</p>` : ''}
+    ${evidence.compLists ? evidence.compLists.map((l) => `<div class="watchlist"><h4>${esc(l.anchor)} fans also watch</h4>${posterStrip(l.films || l.top.map((name) => ({ name })), sharedSet)}</div>`).join('') + `<p class="source">Qloo /v2/insights · filter.type=urn:entity:movie, one query per comp${sharedSet.size ? '. Titles with a red rule are loved by both audiences' : ''}.</p>` : ''}
     ${evidence.compare?.shared?.length ? `<p class="source">Qloo /v2/analysis/compare shared markers: ${esc(evidence.compare.shared.join(', '))}</p>` : ''}`;
 
   /* II. The audience */
   const also = (evidence.blendedFilms || []).slice(0, 6);
   const audienceBody = `<p>${esc(memo.audiencePortrait)}</p>
     ${evidence.tasteDna?.length ? `<div class="dna">${evidence.tasteDna.slice(0, 10).map((t) => `<span>${esc(t.name)}</span>`).join('')}</div><p class="source">Qloo taste analysis · /v2/insights · filter.type=urn:tag</p>` : ''}
-    ${also.length ? `<div class="also">${also.map((f) => `<figure style="margin:0">${frame(f, 'Film')}<figcaption>${esc(f.name)}</figcaption></figure>`).join('')}</div><p class="source">Qloo /v2/insights · films the blended comp audience over-indexes on</p>` : ''}`;
+    ${also.length ? `${posterStrip(also)}<p class="source">Qloo /v2/insights · films the combined comp audience over-indexes on</p>` : ''}`;
 
   /* III. Concept */
+  const lanes = evidence.conceptFit?.lanes || [];
   const conceptBody = `<p>${esc(memo.conceptFinding)}</p>
-    ${evidence.conceptFit ? `<p class="source">Qloo /v2/tags → /v2/insights · signal.interests.tags=${esc(evidence.conceptTags.map((t) => t.tagId).join(','))}</p>` : ''}
-    ${evidence.bridges?.length ? `<p><strong>Bridge titles</strong>, whose audience spans the comps and the concept: <em>${esc(evidence.bridges.map((b) => b.name).join(', '))}</em>.</p>` : ''}`;
+    ${lanes.map((l) => `<div class="lane"><div class="lane-head"><strong>${esc(l.tag)}</strong><div class="track"><div class="fill aff" style="width:${barWidth(l.strength)}%"></div></div><span class="v">${l.strength === null ? 'no films' : `${pct(l.strength)} appetite`}</span></div>
+      ${l.films?.length ? posterStrip(l.films) : '<p class="hint">Qloo has no films in this lane for this audience.</p>'}</div>`).join('')}
+    ${lanes.length ? `<p class="source">Qloo /v2/insights · the comps' audience filtered by each genre tag (filter.tags=${esc(lanes.map((l) => l.tagId).join(','))})</p>` : ''}
+    ${evidence.bridges?.length ? `<h4 class="sub">Bridge titles: audiences that span the comps and the concept</h4>
+      <div class="bridges">${evidence.bridges.map((b) => `<div class="bridge-card">${frame(b, 'Bridge')}<div class="c-name">${esc(b.name)}</div><button type="button" class="btn btn-small" data-act="swap" data-name="${esc(b.name)}">Re-run with this as a comp</button></div>`).join('')}</div>` : ''}`;
 
   /* IV. Partners */
-  const partnersBody = `<div class="partners">${memo.recommendations.map(partnerCard).join('')}</div>
-    <p class="source">Qloo /v2/insights per category · signal.interests.entities = the comps${evidence.conceptTags?.length ? ' + concept tag' : ''}${comps.length > 1 ? ' · feature.explainability=true' : ''}</p>`;
+  const recIds = new Set(memo.recommendations.map((r) => r.entityId));
+  const partnersBody = `<p>Toggle any category to see what Qloo ranks first with no filter (the names every audience over-indexes on) against what is distinctive to <em>this</em> audience. Click a card for the evidence; pin the ones you want on the deal sheet.</p>
+    ${Object.entries(evidence.domains).map(([urn, d]) => `<div class="explorer" data-domain="${esc(urn)}">
+      <div class="explorer-head"><h4>${esc(DOMAIN_LABELS[urn] || urn)}</h4>
+        <div class="seg" role="group" aria-label="View"><button type="button" class="is-on" data-act="view" data-view="distinctive" data-domain="${esc(urn)}">Distinctive</button><button type="button" data-act="view" data-view="mass" data-domain="${esc(urn)}">Mass-market</button></div></div>
+      <div class="partners" data-grid="${esc(urn)}">${memo.recommendations.filter((r) => r.domain === urn).map((r) => partnerCard(r)).join('') || d.entities.slice(0, 3).map((e) => partnerCard({ ...e, domain: urn, action: '', evidence: `Audience affinity ${pct(e.affinity)}, popularity percentile ${pct(e.popularity)}.` })).join('')}</div>
+    </div>`).join('')}
+    <p class="source">Qloo /v2/insights per category · distinctive = filter.popularity.min/max band${comps.length > 1 ? ' · feature.explainability=true' : ''}</p>`;
 
   /* V. Popularity traps */
   const trapsBody = memo.popularityTraps.length ? `<div class="traps">
-      <p>The obvious move is the biggest name. Qloo says this audience doesn't care much for these. Spend the money on the white-space picks above instead.</p>
+      <p>These top every audience's list. They are what a team picks by default, and Qloo shows they say nothing specific about this one. The distinctive picks above are where this audience's attention really goes.</p>
       <div class="trap-grid">${memo.popularityTraps.map((t) => `<div class="trap"><div class="t-cat">${esc(DOMAIN_LABELS[t.domain])}</div><div class="t-name">${esc(t.name)}</div>${bars(t.affinity, t.popularity)}</div>`).join('')}</div>
     </div><p class="source">Qloo popularity vs audience affinity, same queries as above</p>` : '';
 
@@ -246,7 +265,7 @@ export function renderCoverage(result, brief, coverageNo) {
         <div class="metric"><div class="m-n">${card.demographics === null ? 'n/a' : `${card.demographics}%`}</div><div class="m-l">Demographic fit</div><div class="m-s">Same age &amp; gender?</div></div>
         <div class="metric"><div class="m-n">${card.conceptFit === null ? 'n/a' : `${card.conceptFit}%`}</div><div class="m-l">Concept fit</div><div class="m-s">Script ↔ comps</div></div>
       </div>
-      <p class="formula">Risk = 100 − (${card.components.map((c) => `<b>${Math.round(c.weight * 100)}%</b> × ${esc(COMPONENT_LABEL[c.key])} ${esc(c.value)}`).join(' + ')}) + dispersion penalty → <b>${esc(n(card.cultureRiskScore))}</b></p>
+      <p class="formula">Risk = 100 − (${card.components.map((c) => `<b>${Math.round(c.weight * 100)}%</b> × ${esc(COMPONENT_LABEL[c.key])} ${esc(c.value)}`).join(' + ')}) + dispersion penalty → <b>${esc(n(card.rawScore ?? card.cultureRiskScore))}</b>${card.gates?.length ? ` · raised to <b>${esc(card.cultureRiskScore)}</b> by the ${esc(card.gates.map((g) => COMPONENT_LABEL[g.key]).join(' and '))} gate` : ''}</p>
 
       ${sec(roman(), 'The comps', comps.length > 1 ? 'Do these audiences actually overlap?' : 'The comparable audience', compsBody)}
       ${sec(roman(), 'The audience', 'Who they are and what they love', audienceBody)}

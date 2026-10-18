@@ -69,8 +69,13 @@
               <input id="title" type="text" maxlength="120" autocomplete="off" placeholder="Working title" />
             </div>
             <div class="field f-comps">
-              <label for="anchors">Comparable titles <small>up to 3, comma separated</small></label>
-              <input id="anchors" type="text" maxlength="300" autocomplete="off" placeholder="La La Land, Hereditary" required />
+              <label for="anchors">Comparable titles <small>search Qloo · up to 3</small></label>
+              <div class="picker">
+                <input id="anchors" type="text" maxlength="300" autocomplete="off" placeholder="Start typing a film…" required
+                  role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="pickList" />
+                <ul id="pickList" class="pick-list" role="listbox" hidden></ul>
+              </div>
+              <div class="comp-chips" id="compChips" aria-live="polite"></div>
             </div>
             <div class="field f-budget">
               <label for="budget">Budget <small>$M</small></label>
@@ -150,6 +155,22 @@
       <pre class="code" id="mcpCurl"></pre>
     </section>
   </main>
+
+  <!-- Deal sheet bar & evidence drawer (used by the coverage explorer) -->
+  <div class="deal-bar" id="dealBar" hidden>
+    <details>
+      <summary><span id="dealCount">0 on the deal sheet</span></summary>
+      <ol id="dealList"></ol>
+    </details>
+    <div class="deal-actions">
+      <button type="button" class="btn btn-small" id="dealCopy">Copy</button>
+      <button type="button" class="btn btn-small btn-ink" id="dealCsv">Download CSV</button>
+    </div>
+  </div>
+  <dialog class="drawer" id="drawer" aria-label="Partner evidence">
+    <button type="button" class="drawer-close" data-act="close" aria-label="Close">×</button>
+    <div id="drawerBody"></div>
+  </dialog>
 
   <footer class="wrap footer">
     <span>CultureRisk · MIT licensed · Built for the Qloo Agentic Hackathon</span>

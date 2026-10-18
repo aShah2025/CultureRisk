@@ -28,7 +28,7 @@ test('normalizeBrief validates anchors, dedupes, and filters unknown domains', (
 
 test('extractThemes maps script language to tag probes with fallbacks', () => {
   const themes = extractThemes('A neon detective in a royal court');
-  assert.deepEqual(themes.map((t) => t.query), ['cyberpunk', 'neo-noir', 'british royalty']);
+  assert.deepEqual(themes.map((t) => t.query), ['cyberpunk', 'neo-noir', 'historical']);
   assert.ok(themes.every((t) => t.fallback));
   assert.deepEqual(extractThemes(''), []);
 });
@@ -72,16 +72,26 @@ test('describePlan reflects the brief', () => {
   assert.equal(items.at(-1), 'Synthesize the greenlight memo');
 });
 
-test('domain sweep flags a niche probe when every pick is mass-market', async () => {
+test('domain sweep separates mass-market from distinctive picks and widens when too few remain', async () => {
   const ledger = createLedger();
   ledger.comps.push({ entityId: 'x', name: 'X' });
+  const seen = [];
   const qloo = {
     calls: [],
-    insights: async () => ({ data: [{ entityId: 'e1', name: 'Big', affinity: 0.8, popularity: 0.95 }, { entityId: 'e2', name: 'Bigger', affinity: 0.75, popularity: 0.97 }] }),
+    insights: async (q) => {
+      seen.push(q);
+      return q.popularityMax
+        ? { data: [{ entityId: 'n1', name: 'Niche', affinity: 0.9, popularity: 0.6 }, { entityId: 'z', name: 'NoData', affinity: 0.9, popularity: 0 }] }
+        : { data: [{ entityId: 'big', name: 'Giant', affinity: 0.95, popularity: 0.999 }] };
+    },
   };
   const r = await A.domainSweep('urn:entity:brand')({ ledger, qloo });
+  assert.equal(seen.length, 2);
+  assert.equal(seen[1].popularityMax, A.THRESHOLDS.distinctiveMax);
+  assert.deepEqual(ledger.domains['urn:entity:brand'].entities.map((e) => e.name), ['Niche']); // popularity 0 = no data, dropped
+  assert.deepEqual(ledger.domains['urn:entity:brand'].mainstream.map((e) => e.name), ['Giant']);
   assert.equal(ledger.flags['probe:urn:entity:brand'], true);
-  assert.ok(r.decisions.some((d) => d.includes('niche')));
+  assert.ok(r.decisions.some((d) => d.includes('widen')));
 });
 
 test('domain retry adopts the re-query only when alignment improves', async () => {
@@ -190,4 +200,42 @@ test('ledger hydration derives legacy liveData from recorded calls, with conserv
   assert.equal(hydrateLedger({ calls: [{ provenance: 'live' }], liveData: false }).liveData, true);
   assert.equal(summarizeCalls([]).mode, 'simulated');
   assert.deepEqual(summarizeCalls([{ provenance: 'live' }, {}]), { mode: 'mixed', total: 2, live: 1, fallback: 0, simulated: 1 });
+});
+
+test('comp overlap is scored from Qloo cross-affinity (filter.results.entities)', async () => {
+  const ledger = createLedger();
+  ledger.comps.push({ entityId: 'a', name: 'A' }, { entityId: 'b', name: 'B' });
+  const seen = [];
+  const qloo = {
+    calls: [],
+    insights: async (q) => {
+      seen.push(q);
+      if (q.filterResults) return { data: [{ entityId: 'b', name: 'B', affinity: 0.93 }], provenance: 'live' };
+      return { data: [{ entityId: 'f1', name: 'Film', affinity: 0.9, popularity: 0.9 }], provenance: 'live' };
+    },
+  };
+  await A.tasteOverlap({ ledger, qloo });
+  const cross = seen.find((q) => q.filterResults);
+  assert.deepEqual(cross.entityIds, ['a']);
+  assert.deepEqual(cross.filterResults, ['b']);
+  assert.equal(ledger.coherence.method, 'cross-affinity');
+  assert.equal(ledger.coherence.value, 1); // 0.93 is the calibrated ceiling
+});
+
+test('comp overlap is not scored when live and simulated answers mix', async () => {
+  const ledger = createLedger();
+  ledger.comps.push({ entityId: 'a', name: 'A' }, { entityId: 'b', name: 'B' });
+  let n = 0;
+  const qloo = { calls: [], insights: async () => ({ data: [{ entityId: `f${n}`, name: `F${n}`, affinity: 0.9 }], provenance: (n += 1) === 2 ? 'fallback' : 'live' }) };
+  const r = await A.tasteOverlap({ ledger, qloo });
+  assert.equal(ledger.coherence, null);
+  assert.ok(r.decisions.some((d) => d.includes('not scored')));
+});
+
+test('an empty live Qloo answer stays live instead of falling back to simulation', async () => {
+  const { QlooError } = require('../netlify/lib/qloo-client');
+  const svc = createQlooService({ config: { apiKey: 'k' }, liveClient: { insights: async () => { throw new QlooError('insights_empty'); } } });
+  const r = await svc.insights({ filterType: 'urn:entity:brand', entityIds: ['real'], take: 3 });
+  assert.equal(r.provenance, 'live');
+  assert.deepEqual(r.data, []);
 });

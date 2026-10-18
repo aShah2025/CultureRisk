@@ -16,8 +16,8 @@ const MAX_SCRIPT_CHARS = 6000;
 const THEMES = [
   { re: /cyber|neon|android|synthetic|dystop|megastructure/i, query: 'cyberpunk', fallback: 'science fiction' },
   { re: /noir|detective|forensic|crime|investigat/i, query: 'neo-noir', fallback: 'crime' },
-  { re: /royal|king|queen|princess|regent|empire|parliament|monarch/i, query: 'british royalty', fallback: 'period drama' },
-  { re: /19[0-4]\d|victorian|georgian|period|historical/i, query: 'period drama', fallback: 'historical' },
+  { re: /royal|king|queen|princess|regent|empire|parliament|monarch/i, query: 'historical', fallback: 'biography' },
+  { re: /19[0-4]\d|victorian|georgian|period|historical/i, query: 'period piece', fallback: 'historical' },
   { re: /survival|arctic|expedition|wilderness|stranded|ice shelf/i, query: 'survival', fallback: 'adventure' },
   { re: /horror|haunt|ghost|demon|summon/i, query: 'supernatural horror', fallback: 'horror' },
   { re: /grief|mourning|loss/i, query: 'grief', fallback: 'drama' },

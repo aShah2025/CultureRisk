@@ -95,3 +95,15 @@ test('scorecard weights only the components that are present', () => {
   assert.deepEqual(card.components.map((c) => c.key), ['alignment', 'coherence', 'conceptFit']);
   assert.equal(Math.round(card.components.reduce((s, c) => s + c.weight, 0) * 100), 100);
 });
+
+test('deal-breaker gates cap the verdict even when the average looks strong', () => {
+  const domains = { 'urn:entity:brand': [{ entityId: 'a', affinity: 0.95, popularity: 0.5 }, { entityId: 'b', affinity: 0.95, popularity: 0.5 }] };
+  const ok = scorecard({ domains, coherence: 0.9, demographics: 0.9 });
+  assert.equal(ok.verdict, 'GREENLIGHT');
+  assert.deepEqual(ok.gates, []);
+  const split = scorecard({ domains, coherence: 0.3, demographics: 0.95, conceptFit: 0.9 });
+  assert.equal(split.verdict, 'CONDITIONAL GREENLIGHT');
+  assert.equal(split.gates[0].key, 'coherence');
+  const drift = scorecard({ domains, coherence: 0.9, conceptFit: 0.1 });
+  assert.equal(drift.verdict, 'REWORK');
+});

@@ -7,8 +7,10 @@ import { PRESETS } from './presets.js';
 import { getCapabilities, quickScan } from './api.js';
 import { AgentSession } from './session.js';
 import { notesHtml, renderCoverage, renderQuickScan, memoToMarkdown, wireImageFallbacks } from './render.js';
+import { createPicker } from './picker.js';
+import { createExplorer, dealSheetCsv } from './explorer.js';
 
-const state = { session: null, result: null, brief: null, allNotes: '' };
+const state = { session: null, result: null, brief: null, allNotes: '', explorer: null, picker: null };
 
 /* -------------------------------------------------------------------------- */
 /* Masthead                                                                    */
@@ -41,6 +43,7 @@ function applyPreset(p) {
   $('#script').value = p.script;
   $$('#domainChecks input').forEach((c) => { c.checked = p.domains.includes(c.value); });
   $$('.slate-item').forEach((b) => b.classList.toggle('is-active', b.dataset.id === p.id));
+  state.picker?.refresh();
 }
 
 function renderSlate() {
@@ -144,6 +147,11 @@ function showCoverage() {
   el.innerHTML = renderCoverage(state.result, state.brief, coverageNumber(state.brief));
   el.querySelector('[data-appendix-notes]').innerHTML = state.allNotes;
   wireImageFallbacks(el);
+  state.explorer?.destroy();
+  state.explorer = createExplorer(el, state.result);
+  // Remember resolved comps (with Qloo posters) for the picker chips.
+  state.result.evidence.comps.forEach((c) => state.picker?.remember(c));
+  state.picker?.refresh();
   el.hidden = false;
   $('#desk').hidden = true;
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -162,6 +170,16 @@ function flash(btn, text) {
 async function onDocTool(e) {
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
+  if (btn.dataset.act === 'swap') {
+    // Collaborate with the agent: keep the lead comp, swap the bridge title in, re-run.
+    const keep = state.result.evidence.leadComp || state.result.evidence.comps[0]?.name;
+    $('#anchors').value = [keep, btn.dataset.name].filter(Boolean).join(', ');
+    $('#title').value = state.brief.title;
+    state.picker?.refresh();
+    $('#request').scrollIntoView({ behavior: 'smooth' });
+    $('#briefForm').requestSubmit();
+    return;
+  }
   if (btn.dataset.act === 'print') {
     $$('#coverage details').forEach((d) => { d.open = true; });
     window.print();
@@ -225,6 +243,7 @@ function setMode(mode) {
 /* -------------------------------------------------------------------------- */
 
 masthead();
+state.picker = createPicker({ input: $('#anchors'), list: $('#pickList'), chips: $('#compChips') });
 renderSlate();
 applyPreset(PRESETS[3]); // open on the most revealing case: the risky hybrid
 fillMcp();
@@ -232,5 +251,19 @@ loadCapabilities();
 $('#briefForm').addEventListener('submit', runAnalysis);
 $('#stopBtn').addEventListener('click', () => state.session?.stop());
 $('#coverage').addEventListener('click', onDocTool);
+$('#dealCsv').addEventListener('click', () => {
+  const blob = new Blob([dealSheetCsv(state.explorer?.dealRows() || [], state.brief.title)], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `deal-sheet-${state.brief.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$('#dealCopy').addEventListener('click', async (e) => {
+  try {
+    await navigator.clipboard.writeText(dealSheetCsv(state.explorer?.dealRows() || [], state.brief.title));
+    flash(e.currentTarget, 'Copied ✓');
+  } catch { flash(e.currentTarget, 'Copy failed'); }
+});
 $('#scanForm').addEventListener('submit', runScan);
 $$('.nav-link').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));

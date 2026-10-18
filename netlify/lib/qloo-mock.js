@@ -213,9 +213,19 @@ function createMockQlooClient() {
       }));
     },
 
-    async insights({ filterType, entityIds = [], tagIds = [], take = 8, explain = false, popularityMax = null }) {
-      const seed = `${filterType}|${[...entityIds].sort().join(',')}|${[...tagIds].sort().join(',')}`;
-      const ranked = rankLibrary(filterType, seed, { take, popularityMax });
+    async insights({ filterType, entityIds = [], tagIds = [], take = 8, explain = false, popularityMax = null, popularityMin = null, excludeIds = [], filterTags = [], filterResults = [] }) {
+      if (filterResults.length) {
+        // Score specific entities against the signal (filter.results.entities).
+        return filterResults.map((id) => ({
+          entityId: id, name: id.split(':').pop(), type: filterType, year: null, disambiguation: null,
+          affinity: round3(0.68 + ((hashString(`${[...entityIds].sort().join(',')}|x|${id}`) % 260) / 1000)),
+          popularity: 0.9, audienceGrowth: null, explainability: null, image: null, tags: [],
+        }));
+      }
+      const seed = `${filterType}|${[...entityIds].sort().join(',')}|${[...tagIds].sort().join(',')}|${filterTags.join(',')}`;
+      const ranked = rankLibrary(filterType, seed, { take: take + excludeIds.length, popularityMax })
+        .filter((e) => (popularityMin === null || e.popularity >= popularityMin) && !excludeIds.includes(e.entityId))
+        .slice(0, take);
       if (explain && entityIds.length) {
         ranked.forEach((e) => {
           const raw = entityIds.map((id) => 0.2 + ((hashString(`${seed}|x|${e.name}|${id}`) % 800) / 1000));

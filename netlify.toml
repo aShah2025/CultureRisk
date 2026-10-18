@@ -8,6 +8,7 @@
 # Public routes are clean /api/* paths, rewritten to the functions:
 #   GET/POST /api/agent        → agent.js        (autonomous Qloo research agent, one step per call)
 #   POST     /api/mcp          → mcp.js          (MCP server: use CultureRisk from any AI agent)
+#   GET      /api/search       → search.js       (live Qloo title search for the comp picker)
 #   GET      /api/qloo_bridge  → qloo_bridge.js  (single-shot quick scan)
 #
 # SECRET: set in Netlify UI → Site configuration → Environment variables:
