@@ -6,7 +6,7 @@ CultureRisk is an autonomous research agent for film-studio executives, built en
 
 > Built for the **Qloo Agentic Hackathon** · Qloo Taste AI · Netlify · MIT licensed · also available as an **MCP tool** for any AI agent
 
-**Live demo:** _add your Netlify URL here_ · **Judges:** [try it in 60 seconds](#for-judges-try-it-in-60-seconds)
+**Live demo:** [culturerisk.netlify.app](https://culturerisk.netlify.app) · **Judges:** [try it in 60 seconds](#for-judges-try-it-in-60-seconds)
 
 ---
 

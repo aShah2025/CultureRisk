@@ -32,7 +32,7 @@ Back-test the verdict against known hits and flops; add more verticals beyond fi
 Qloo API (search, insights, demographics, tags, analysis/compare, explainability), Node.js, Netlify Functions, Model Context Protocol
 
 ## Links
-- Demo: **<add Netlify URL>**
+- Demo: https://culturerisk.netlify.app
 - Repo: https://github.com/aShah2025/CultureRisk (MIT)
 
 ## "Significantly updated during the submission period" note
