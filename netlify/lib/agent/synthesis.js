@@ -13,6 +13,7 @@ const { scorecard, whiteSpace, domainProfile } = require('../risk-model');
 const { AGE_LABEL } = require('./actions');
 const { summarizeCalls } = require('./ledger');
 
+const VERDICT_WORD = { GREENLIGHT: 'Recommend', 'CONDITIONAL GREENLIGHT': 'Consider', REWORK: 'Rework', PASS: 'Pass' };
 const pct = (v) => (typeof v === 'number' ? `${Math.round(v * 100)}%` : 'n/a');
 const list = (xs) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
 
@@ -123,6 +124,11 @@ function buildRisks(ledger, card) {
 function headlineFor(card, ledger) {
   const coh = ledger.coherence?.value;
   if (card.gates?.length) return card.gates[0].reason;
+  const cf = ledger.conceptFit?.value;
+  const conceptWeak = typeof cf === 'number' && cf < 0.45;
+  if (conceptWeak && (card.verdict === 'GREENLIGHT' || card.verdict === 'CONDITIONAL GREENLIGHT')) {
+    return `The audience is real, but the concept sits outside what it loves (${pct(cf)} fit). Resolve that before committing.`;
+  }
   switch (card.verdict) {
     case 'GREENLIGHT': return 'A coherent, well-defined audience with strong cross-domain pull. Proceed.';
     case 'CONDITIONAL GREENLIGHT': return typeof coh === 'number' && coh < 0.55
@@ -159,14 +165,25 @@ function composeMemo(brief, ledger) {
       `Overall concept fit ${pct(ledger.conceptFit.value)}${ledger.leadComp ? `, closest to ${ledger.leadComp}'s audience` : ''}.`
     : 'No distinctive genres were detected in the treatment, so concept fit was not measured.';
 
-  const topRec = recs.find((r) => r.whiteSpace) || recs[0];
+  const byAffinity = (a, b) => (b.affinity ?? 0) - (a.affinity ?? 0);
+  const topRec = [...recs].filter((r) => r.whiteSpace).sort(byAffinity)[0] || [...recs].sort(byAffinity)[0];
+  const verdictWord = VERDICT_WORD[card.verdict] || card.verdict.toLowerCase();
+  const coh = ledger.coherence?.value;
+  const cohBand = typeof coh === 'number' ? (coh >= 0.55 ? 'a genuine shared audience' : coh >= 0.35 ? 'only a partial overlap' : 'largely different audiences') : null;
   const summary = [
     source.mode !== 'live' ? `Data: ${source.mode}; ${source.live}/${source.total} calls returned live Qloo evidence.` : '',
-    `${brief.title} scores ${card.cultureRiskScore ?? 'n/a'}/100 on culture risk (${card.verdict.toLowerCase()}, ${card.confidence} confidence) against the ${list(comps)} audience.`,
-    ledger.coherence ? `The comps ${ledger.coherence.value >= 0.55 ? 'share a genuine audience' : ledger.coherence.value >= 0.35 ? 'overlap only partially' : 'pull in different directions'}.` : '',
+    `${brief.title} scores ${card.cultureRiskScore ?? 'n/a'}/100 on culture risk: a ${verdictWord} call at ${card.confidence} confidence.`,
+    cohBand ? `The comps show ${cohBand}.` : '',
     ledger.conceptFit ? `The concept ${ledger.flags.conceptDrift ? 'drifts away from' : 'fits'} that audience.` : '',
     topRec ? `Strongest commercial lever: ${topRec.name} (${DOMAINS[topRec.domain]}).` : '',
   ].filter(Boolean).join(' ');
+
+  const bestLane = [...(ledger.conceptFit?.lanes || [])].filter((l) => typeof l.strength === 'number').sort((a, b) => b.strength - a.strength)[0];
+  const keyFindings = [
+    cohBand ? `${list(comps)} share ${pct(coh)} of their audience: ${cohBand}.${ledger.bridges?.[0] ? ` ${ledger.bridges[0].name} bridges the two.` : ''}` : null,
+    bestLane ? `Closest genre fit is ${bestLane.tag.toLowerCase()} (${pct(bestLane.strength)} appetite)${ledger.flags.conceptDrift ? ', but the comps\' audience is lukewarm on the concept overall' : ''}.` : null,
+    topRec ? `Best partner lead: ${topRec.name} in ${DOMAINS[topRec.domain].toLowerCase()}, at ${pct(topRec.affinity)} affinity${topRec.whiteSpace ? ` against ${pct(topRec.popularity)} popularity` : ''}.` : null,
+  ].filter(Boolean);
 
   const nextSteps = [
     ledger.leadComp && ledger.comps.length > 1 ? `Lead the pitch deck with ${ledger.leadComp}${ledger.bridges?.[0] ? ` and add ${ledger.bridges[0].name} as a bridge comp` : ''}.` : null,
@@ -184,6 +201,7 @@ function composeMemo(brief, ledger) {
       headline: source.mode === 'live' ? headlineFor(card, ledger)
         : `${source.mode === 'mixed' ? 'Mixed live and simulated evidence' : source.mode === 'fallback' ? 'Simulated fallback evidence' : 'Simulated evidence'}: provisional coverage; re-run with fully live data before acting.`,
       executiveSummary: summary,
+      keyFindings,
       audiencePortrait: portrait || 'Insufficient Qloo signal to characterise the audience.',
       compFinding,
       conceptFinding,

@@ -26,7 +26,7 @@ Calibrating scores on live Qloo data (cross-affinity ranges, e.g. Paddington 2 Ã
 Qloo's affinity vs popularity split is the most useful signal for finding under-priced partners, and explainability turns a score into an argument an exec can defend.
 
 ## What's next
-Back-test the verdict against known hits and flops; add more verticals beyond film.
+A first back-test on four released films (two hits, two flops) shows the score does not separate hits from flops. It tests whether a pitch's audience exists, not execution. Next: a larger back-test, concept-fit gating, and more verticals beyond film.
 
 ## Built with
 Qloo API (search, insights, demographics, tags, analysis/compare, explainability), Node.js, Netlify Functions, Model Context Protocol

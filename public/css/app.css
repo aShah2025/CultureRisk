@@ -183,6 +183,9 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--r
 .score-l { font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-3); }
 .headline { font: italic 500 clamp(22px, 2.6vw, 28px)/1.3 var(--serif); margin: 0 0 10px; }
 .summary { margin: 0; font-size: 17.5px; }
+.findings { margin: 0; padding: 0; list-style: none; font-size: 17px; }
+.findings li { padding: 9px 0 9px 18px; border-top: 1px solid var(--rule, #d9d2c3); position: relative; }
+.findings li::before { content: ''; position: absolute; left: 0; top: 1.05em; width: 7px; height: 7px; background: #b3261e; }
 @media (max-width: 600px) { .verdict-block { grid-template-columns: 1fr; gap: 10px; } .score { text-align: left; } }
 
 .formula { font: 13.5px/1.7 var(--mono); color: var(--ink-2); background: var(--paper); border-left: 3px solid var(--red); padding: 10px 14px; margin: 0 0 8px; }

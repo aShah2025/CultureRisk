@@ -256,7 +256,7 @@ export function renderCoverage(result, brief, coverageNo) {
 
       <div class="verdict-block">
         <div class="score"><div class="score-n">${esc(n(card.cultureRiskScore))}<small>/100</small></div><div class="score-l">Culture risk</div></div>
-        <div><p class="headline">${esc(memo.headline)}</p><p class="summary">${esc(memo.executiveSummary)}</p></div>
+        <div><p class="headline">${esc(memo.headline)}</p>${memo.keyFindings?.length ? `<ul class="findings">${memo.keyFindings.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : `<p class="summary">${esc(memo.executiveSummary)}</p>`}</div>
       </div>
 
       <div class="metrics">

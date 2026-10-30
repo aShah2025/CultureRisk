@@ -107,11 +107,11 @@ claude mcp add --transport http culturerisk https://<your-site>.netlify.app/api/
 ## For judges: try it in 60 seconds
 
 1. Open the live demo. The masthead shows whether Qloo data is **live**.
-2. Pick a case study from **the slate** (the risky hybrid is preloaded):
-   - **Cyberpunk Neo-Noir:** *Blade Runner 2049* × *Ghost in the Shell*
-   - **Royal Period Drama:** *The King's Speech* × *The Favourite*
-   - **Elevated Survival:** *The Revenant* × *Everest*
-   - **Risky Hybrid: Musical × Horror:** *La La Land* × *Hereditary*. Watch the agent detect the split and go looking for a bridge title.
+2. Pick a case from **the slate**. These are four released films, each run on the comps it was pitched on:
+   - **Joker:** *Taxi Driver* × *The King of Comedy*
+   - **The Greatest Showman:** *Moulin Rouge!* × *Chicago*
+   - **Cats:** *Les Misérables* × *Into the Woods*
+   - **John Carter:** *Avatar* × *Star Wars*
 3. Press **Request coverage** and watch the agent work **on the desk**.
 4. Read the coverage: the stamp, the comps face-off, the audience, the partners, *Without Qloo*, and the moodboard. Open *Appendix B* to see every Qloo call.
 5. Try your own project, or open **For AI agents** to connect CultureRisk to Claude, Cursor or another MCP client.
@@ -155,6 +155,19 @@ npm test
 ```
 
 **Deploy:** import the repo into Netlify. `netlify.toml` configures everything and runs the tests on each build. Add `QLOO_HACKATHON_API_KEY` under *Site configuration → Environment variables*, then redeploy.
+
+## What it can and can't tell you
+
+`scripts/backtest.js` runs the live agent on the four slate films and prints the verdict next to the real box office (`node --env-file=.env scripts/backtest.js`). Result on live Qloo data:
+
+| Film | Outcome | Culture risk | Verdict |
+|---|---|---|---|
+| Joker | $1.07B on $55M | 26 | Greenlight |
+| The Greatest Showman | $435M on $84M | 15 | Greenlight |
+| Cats | ~$75M on $95M | 28 | Greenlight |
+| John Carter | ~$284M on $263M | 25 | Greenlight |
+
+**The score does not separate hits from flops, and we don't claim it does.** It measures whether the pitch describes an audience that exists: do the comps' fans overlap, does the concept match what they love. It does not measure execution, marketing or release timing, which sink films like *Cats*. The one weak signal in this set is concept fit on *John Carter* (27%), which the memo flags in its headline. Four films is a smoke test, not a validation. The weights are unfitted judgment calls.
 
 ## Who it's for
 

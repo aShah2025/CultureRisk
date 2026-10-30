@@ -213,10 +213,10 @@ function scorecard({ domains, coherence = null, conceptFit = null, demographics 
   // Deal-breaker gates: a strong average must not hide a structural flaw.
   const gates = [];
   if (parts.coherence !== null && parts.coherence < GATES.divergentComps) {
-    gates.push({ key: 'coherence', floor: 31, reason: `The comps' audiences barely overlap (${parts.coherence}%), so this can be at best a Consider.` });
+    gates.push({ key: 'coherence', floor: 31, reason: `The comps' audiences barely overlap (${parts.coherence}%), so the "X meets Y" audience may not exist. Capped at Consider.` });
   }
   if (parts.conceptFit !== null && parts.conceptFit < GATES.conceptDrift) {
-    gates.push({ key: 'conceptFit', floor: 46, reason: `The comps' audience has little appetite for the script's genres (${parts.conceptFit}%), so the package needs rework.` });
+    gates.push({ key: 'conceptFit', floor: 46, reason: `The comps' audience has little appetite for the script's genres (${parts.conceptFit}%), so the concept and comps need reworking. Capped at Rework.` });
   }
   const cultureRiskScore = Math.max(rawScore, ...gates.map((g) => g.floor));
 
